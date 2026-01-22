@@ -1,3 +1,13 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+.env/
+ENV/
+
+# VSCode config
+.vscode/
+
 __pycache__/
 data/
 report.html
