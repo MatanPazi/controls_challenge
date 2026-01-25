@@ -1,38 +1,18 @@
-State vector shall be v - lateral velocity and r - yaw rate.
+State vector shall be:
 
-There's a constant delay of 4 samples in the steering command.
-This was done by generating a relevant .csv file (Constant speed, 0 acceleration, 0 steering, 0 roll), implementing a test.py controller which generates a step command and seeing how many samples it takes for a noticeable change in values, both on the rising edge and the falling edge.
-
-The run was done using:
-python tinyphysics.py --model_path ./models/tinyphysics.onnx --data_path ./data/00000.csv --debug --controller pid
-
-With an edited test.csv used and a test controller used.
-
-
-Next, I wanted to know what kind of noise I had, so I updated the tinyphysics.py script to find the mean, STD deviation, and distribution quantities (Shapiro-wilk, Dagostino's K^2 p-value, Skewness & Excess Kurtosis.
-Also plotted a histogram, and a Q-Q plot.
-This was done for a single speed, need to expand to speed bins.
-The conclusion was that the distribution was close to but not very normal/Gaussian.
-The conclusion was to use an LQG controller with a regular Kalman filter and see how well it fared.
-If the performance isn't adequate, consider using a robust Kalman filter (E.g Huber loss)
+	ay_k
+	ay_k-1
+	delta_k-1
+	delta_k-2
+x =	delta_k-3
+	delta_k-4 (?) Depends on the sample delay)
+	v_k
+	ax_k
+	r_k			
 
 
-
-
-
-
-Next, I'd like to somehow model the noise in the system to add it to the system model.
-Do I even need to model the noise? Will it help the control later on?
-
-
-
-
-
-
-
-
-Next, I'd like to identify the parameters which might affect the system dynamics (matrices A and B). The parameters of interest are v_ego and a_ego (Statistical Sensitivity Tests).
-v_ego definitely affect them, but I'd like to see how much a_ego affects the dynamics compared to v_ego.
-
-This isn't strictly necessary as I assume I will include it as a scheduling parameter, but I'm interested in this process.
-
+ay = lateral acceleration
+delta - steering command
+v_k - ego speed
+ax_k - longitudinal acceleration	
+r_k - road roll lateral acceleration
