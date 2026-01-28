@@ -1,4 +1,4 @@
-State vector shall be:
+State vector:
 
 	ay_k
 	ay_k-1
@@ -6,13 +6,28 @@ State vector shall be:
 	delta_k-2
 x =	delta_k-3
 	delta_k-4 (?) Depends on the sample delay)
-	v_k
-	ax_k
-	r_k			
+	b_k			
 
 
 ay = lateral acceleration
 delta - steering command
-v_k - ego speed
+b -  IMU lateral-accel bias (random walk)
+
+
+
+
+Exogenous inputs:
+
+
+	v_k
+zeta = 	ax_k
+	r_k
+
+vx_k - ego speed
 ax_k - longitudinal acceleration	
 r_k - road roll lateral acceleration
+
+
+
+State update:
+x_k+1 = A(zeta) * x_k + B*u_k + E(zeta)*zeta_k + w_k
