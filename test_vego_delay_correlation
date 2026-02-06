@@ -1,0 +1,159 @@
+# Script function:
+# Changes the selected route's vEgo to be different values to see if it affects the sample delay.
+
+
+# Result:
+# No apparent correlation between sample delay and longitudinal speed.
+import os
+from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+import urllib.request
+import zipfile
+from io import BytesIO
+import pandas as pd
+
+from tinyphysics import TinyPhysicsModel, TinyPhysicsSimulator, CONTROL_START_IDX
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Controllers that record history
+# ──────────────────────────────────────────────────────────────────────────────
+
+class RecordingZeroController:
+    def __init__(self):
+        self.current_lataccel_history = []
+        self.v_ego_history = []
+
+    def update(self, target_lataccel, current_lataccel, state, future_plan=None):
+        self.current_lataccel_history.append(current_lataccel)
+        self.v_ego_history.append(state.v_ego)
+        return 0.0
+
+
+class RecordingStepController:
+    def __init__(self, const_value=1.0):
+        self.const_value = const_value
+        self.current_lataccel_history = []
+        self.v_ego_history = []
+
+    def update(self, target_lataccel, current_lataccel, state, future_plan=None):
+        self.current_lataccel_history.append(current_lataccel)
+        self.v_ego_history.append(state.v_ego)
+        return self.const_value
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+
+model_path = './models/tinyphysics.onnx'
+data_dir   = Path('./data')
+output_dir = Path('./modified_constant_speed')
+output_dir.mkdir(exist_ok=True)
+
+base_csv   = data_dir / '00000.csv'
+epsilon    = 0.001
+
+# Speeds to test (m/s) — feel free to change / add more
+test_speeds = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Download if missing
+# ──────────────────────────────────────────────────────────────────────────────
+
+if not data_dir.exists() or not base_csv.exists():
+    url = "https://huggingface.co/datasets/commaai/commaSteeringControl/resolve/main/data/SYNTHETIC_V0.zip"
+    print("Downloading synthetic dataset...")
+    with urllib.request.urlopen(url) as resp:
+        zip_data = BytesIO(resp.read())
+    with zipfile.ZipFile(zip_data) as z:
+        z.extractall(data_dir.parent)
+    print("Dataset extracted.")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Load base file and check column names
+# ──────────────────────────────────────────────────────────────────────────────
+
+print(f"Loading {base_csv}")
+df_base = pd.read_csv(base_csv)
+print("Columns in dataset:", df_base.columns.tolist())
+
+# Detect actual column names (very common variants in comma.ai data)
+v_ego_col = next((c for c in df_base.columns if c.lower() in ['vego', 'v_ego']), None)
+a_ego_col = next((c for c in df_base.columns if c.lower() in ['aego', 'a_ego']), None)
+
+if v_ego_col is None or a_ego_col is None:
+    print("ERROR: Could not find vEgo / aEgo-like columns. Found:")
+    print([c for c in df_base.columns if 'ego' in c.lower()])
+    raise ValueError("Cannot find speed/acceleration columns — check printed column names above.")
+
+print(f"→ Using speed column:   {v_ego_col}")
+print(f"→ Using accel column:   {a_ego_col}")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Generate modified files + run simulations
+# ──────────────────────────────────────────────────────────────────────────────
+
+delays = []
+used_speeds = []
+
+for speed_ms in test_speeds:
+    df_mod = df_base.copy()
+    df_mod[v_ego_col] = speed_ms     # overwrite existing column
+    df_mod[a_ego_col] = 0.0          # overwrite existing column
+
+    out_path = output_dir / f'00000_const_{speed_ms:04.1f}ms.csv'
+    df_mod.to_csv(out_path, index=False)
+    print(f"Created: {out_path}  (v = {speed_ms:.1f} m/s)")
+
+    # ── Run simulation ───────────────────────────────────────────────────────
+    print(f"  Running simulation at {speed_ms:.1f} m/s ...")
+
+    model = TinyPhysicsModel(model_path, debug=False)
+
+    zero_ctrl = RecordingZeroController()
+    sim_zero = TinyPhysicsSimulator(model, str(out_path), zero_ctrl, debug=False)
+    sim_zero.rollout()
+
+    step_ctrl = RecordingStepController(const_value=1.0)
+    sim_step = TinyPhysicsSimulator(model, str(out_path), step_ctrl, debug=False)
+    sim_step.rollout()
+
+    zero_lat = np.array(zero_ctrl.current_lataccel_history)
+    step_lat = np.array(step_ctrl.current_lataccel_history)
+
+    if len(zero_lat) != len(step_lat):
+        print("    Length mismatch → skipping")
+        continue
+
+    diff = np.abs(zero_lat - step_lat)
+    post = diff[CONTROL_START_IDX:]
+
+    if np.any(post > epsilon):
+        idx_first = np.where(post > epsilon)[0][0]
+        delay = idx_first + CONTROL_START_IDX - CONTROL_START_IDX  # = idx_first
+        delays.append(delay)
+        used_speeds.append(speed_ms)
+        print(f"    → Delay = {delay} steps")
+    else:
+        print(f"    → No visible divergence (max diff = {post.max():.5f})")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Plot
+# ──────────────────────────────────────────────────────────────────────────────
+
+if delays:
+    plt.figure(figsize=(10, 6))
+    plt.plot(used_speeds, delays, marker='o', linestyle='-', color='C0')
+    plt.scatter(used_speeds, delays, s=100, color='C0', zorder=10)
+    plt.xlabel('Constant longitudinal speed  vEgo  (m/s)')
+    plt.ylabel('Detected delay  (steps until |Δlataccel| > 0.001)')
+    plt.title('Effect of constant speed on observed control delay\n(Route 00000.csv with aEgo=0)')
+    plt.grid(True, alpha=0.3)
+    plt.xticks(test_speeds)
+    plt.yticks(range(0, max(delays)+2))
+    plt.tight_layout()
+    plt.show()
+else:
+    print("\nNo measurable delays detected in any of the modified runs.")
+
+print("\nDone.")
