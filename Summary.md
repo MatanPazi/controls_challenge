@@ -42,7 +42,8 @@ $$
 According to the costs in this challenge, the current and previous lateral acceleration are sufficient to calculate both, so those 2 states are crucial to have in the state vector.
 
 I need to include the previous steering commands because, due to the delay, they will affect the resulting lateral acceleration and lateral jerk.
-I'm also adding the accelerometer bias, since using the observer I'll be able to estimate it and use it to get more accurate sensor laterala cceleration measurments.
+I'm also adding the accelerometer bias, since using the observer I'll be able to estimate it and use it to get more accurate sensor laterala cceleration measurments.  
+See **System identification** -> **Delay** to understand why 3 previous steer commands were chosen.
 
 - $ay_k$  
 - $ay_{k-1}$  
@@ -92,6 +93,25 @@ As an initial step, I'll include the last three previous steering commands.
 I'd rather keep the state dimension as small as possible.
 The # of sample delays can be adjusted later if needed.
 
+## Model identification
+
+# TODO
+
+LPV-ARX with quadratic v dependence.  
+See "1. LPV-ARX (Recommended starting point — simplest & very effective)" in 
+https://x.com/i/grok/share/81de057bd5c04c3db0f21f64fbc5b387
+
+Convert it to state-space form (use control.tf2ss or manually for ARX → SS).  
+Validate on 20–30 hold-out segments : One-step prediction error  
+Free-run simulation error (most important for MPC)  
+Step-response overlay vs TinyPhysics (should match within ~0.05 m/s²)  
+
+If simulation error > ~0.08 m/s² RMS → try Option 2 (gain-scheduled) or add one more lag.
+Once happy → noise identification (process + measurement covariance from residuals) → you’re ready for LQG / Tube-MPC / Stochastic MPC.
+
+
+
+
 ### Noise
 
 To be determined later, Though, from a quick inspection, a skewed gaussian was detected.
@@ -112,5 +132,9 @@ Stochastic MPC
 
 * Designing a controller:
   * Stochastic LPV MPC
+  * Tube MPC
+  * LQG
+  * etc.
+
 
 * Noise identification (Process + measurement)
