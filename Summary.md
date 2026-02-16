@@ -37,6 +37,17 @@ $$
 
 # Path to solution  
 
+## Available Data
+The available .csv routes are in the 'data' folder.  
+The file names are '00000.csv', '00001.csv', ... , '19999.csv'.  
+The columns names are as follows:  
+* t $[s]$
+* vEgo  $[m/s]$
+* aEgo  $[m/s^2]$
+* roll  $[m/s^2]$
+* targetLateralAcceleration $[m/s^2]$
+* steerCommand  $[rad]$
+
 ## Defining the state vector, $x_k$:
 
 According to the costs in this challenge, the current and previous lateral acceleration are sufficient to calculate both, so those 2 states are crucial to have in the state vector.
@@ -53,22 +64,22 @@ See **System identification** -> **Delay** to understand why 3 previous steer co
 - $b_k$
 
 ### Legend
-- ay — lateral acceleration  
-- delta — steering command  
+- ay — lateral acceleration $[m/s^2]$
+- delta — steering command  $[rad]$
 - b — IMU lateral-accel bias (random walk)
 
 ## Exogenous Inputs (ζₖ)
 
 Next are the exogenous inputs. I'm not interested in them directly, nor do I command them, but they affect the system response so they're taken into account.
 
-- $vx_k$  
-- $ax_k$  
+- $vx_k$
+- $ax_k$
 - $r_k$
 
 ### Legend
-- $vx_k$ — longitudinal speed  
-- $ax_k$ — longitudinal acceleration  
-- $r_k$  — road roll lateral acceleration
+- $vx_k$ — longitudinal speed $[m/s]$
+- $ax_k$ — longitudinal acceleration  $[m/s^2]$ 
+- $r_k$  — road roll lateral acceleration $[m/s^2]$
 
 ## State Update
 
