@@ -138,3 +138,4 @@ Stochastic MPC
 
 
 * Noise identification (Process + measurement)
+* TODO, give more details on given data (Folder, column names, etc.?)
