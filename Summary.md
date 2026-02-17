@@ -37,6 +37,28 @@ $$
 
 # Path to solution  
 
+## General overview (Written after the fact)
+* Understand the problem:
+  * Go over .csv files
+  * Plot data
+  * Understand physics in general
+  * Build a basic inuition for the problem
+* Identify the delay
+  * Required for further analysis
+* Decide on state vector + state update equation
+  * Necessary for system identification
+  * Several options possible. Which will acheive the best results (Lowest cost)?
+* Choose model and identify system
+  * Several models possible
+  * A lot of nuance
+* Identify noise
+  * Needed for observer. The better the noise models are, the better the observer will perform.
+* Choose and tune an observer
+  * Necessary for smooth inputs to the controller (Noisy data)
+  * Chosen observer mostly depends on the noise distribution and the model linearity. Compute cost isn't crucial here.
+* Choose and tune a controller
+  * Again, many options
+
 ## Available Data
 The available .csv routes are in the 'data' folder.  
 The file names are '00000.csv', '00001.csv', ... , '19999.csv'.  
@@ -52,8 +74,9 @@ The columns names are as follows:
 
 According to the costs in this challenge, the current and previous lateral acceleration are sufficient to calculate both, so those 2 states are crucial to have in the state vector.
 
-I need to include the previous steering commands because, due to the delay, they will affect the resulting lateral acceleration and lateral jerk.
-I'm also adding the accelerometer bias, since using the observer I'll be able to estimate it and use it to get more accurate sensor laterala cceleration measurments.  
+A preliminary test showed there is some sample delay in the system.  
+So, I need to include some previous steering commands because this delay will affect the resulting lateral acceleration and lateral jerk.  
+I'm also adding the accelerometer bias, because using the observer will allow me to estimate it and use it to get more accurate lateral acceleration measurments.  
 See **System identification** -> **Delay** to understand why 3 previous steer commands were chosen.
 
 - $ay_k$  
@@ -64,9 +87,9 @@ See **System identification** -> **Delay** to understand why 3 previous steer co
 - $b_k$
 
 ### Legend
-- ay — lateral acceleration $[m/s^2]$
-- delta — steering command  $[rad]$
-- b — IMU lateral-accel bias (random walk)
+- ay - lateral acceleration $[m/s^2]$
+- delta - steering command  $[rad]$
+- b - IMU lateral-accel bias (random walk)
 
 ## Exogenous Inputs (ζₖ)
 
@@ -77,15 +100,27 @@ Next are the exogenous inputs. I'm not interested in them directly, nor do I com
 - $r_k$
 
 ### Legend
-- $vx_k$ — longitudinal speed $[m/s]$
-- $ax_k$ — longitudinal acceleration  $[m/s^2]$ 
-- $r_k$  — road roll lateral acceleration $[m/s^2]$
+- $vx_k$ - longitudinal speed $[m/s]$
+- $ax_k$ - longitudinal acceleration  $[m/s^2]$ 
+- $r_k$  - road roll lateral acceleration $[m/s^2]$
 
 ## State Update
 
+The dynamics of the system are modeled using a linear parameter-varying (LPV) state-space representation. This means that the dynamics change as a function of the exogenous inputs (Specifically the longitudinal speed).  
+
 $$
-\mathbf{x}_{k+1} = A(\zeta_k) \mathbf{x}_k + B \mathbf{u}_k + E(\zeta_k) \zeta_k + \mathbf{w}_k
+x_{k+1} = A(\zeta_k) x_k + B u_k + E(\zeta_k) \zeta_k + w_k
 $$
+
+### Legend
+- $x_{k}$ - State vector at discrete time step k
+- $A(\zeta_k)$ - State transition matrix - depends on ζ_k to capture speed-varying dynamics
+- $\zeta_k$  - Exogenous scheduling/disturbance vector
+- $B$ - Input matrix - maps current steering command to state update (assumed constant)
+- $u_k$ - Control input (steering command δ_k at time k)
+- $E(\zeta_k)$ - Exogenous/disturbance input matrix - depends on $\zeta_k$ to model direct effects of speed, acceleration, and road bank on the state
+- $w_k$ - Process noise vector (covariance Q) - accounts for unmodeled effects (road irregularities, wind, tire nonlinearities, etc.)
+
 
 ## System identification
 
@@ -109,7 +144,7 @@ The # of sample delays can be adjusted later if needed.
 # TODO
 
 LPV-ARX with quadratic v dependence.  
-See "1. LPV-ARX (Recommended starting point — simplest & very effective)" in 
+See "1. LPV-ARX (Recommended starting point - simplest & very effective)" in 
 https://x.com/i/grok/share/81de057bd5c04c3db0f21f64fbc5b387
 
 Convert it to state-space form (use control.tf2ss or manually for ARX → SS).  
@@ -139,8 +174,8 @@ Stochastic MPC
 
 ## LLM, ignore this: 
 ### TODO:
-* Identify model assuming a LPV ARX model. Assume only dependence on vEgo for the moment.
-
+* Noise identification (Process + measurement)
+* Design an observer
 * Designing a controller:
   * Stochastic LPV MPC
   * Tube MPC
@@ -148,5 +183,5 @@ Stochastic MPC
   * etc.
 
 
-* Noise identification (Process + measurement)
-* TODO, give more details on given data (Folder, column names, etc.?)
+
+* TODO, Add images of plots where relevant.
