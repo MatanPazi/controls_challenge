@@ -1,39 +1,88 @@
+"""
+LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
+
+This script fits a Linear Parameter-Varying AutoRegressive with eXogenous inputs (LPV-ARX) model 
+to predict the next lateral acceleration (targetLateralAcceleration) from:
+- Past lateral accelerations (NA lags)
+- Past steering commands (NDELTA lags)
+- Current exogenous signals: vEgo, aEgo, roll
+
+The model uses a quadratic basis in vEgo (constant + linear + v²) to make coefficients speed-dependent, 
+capturing the strong v² dependence in vehicle lateral dynamics.
+
+Key steps:
+1. Loads CSV files from data folder (limited to MAX_ROUTES)
+2. For each file: filters pre-control-start data (before CONTROL_START_IDX, for original openpilot controller), 
+   removes rows with NaN/inf in key columns
+3. Builds regression matrix X by multiplying lagged values with LPV basis in vEgo (phi matrix)
+4. Fits parameters theta using ridge regression (regularized least squares)
+5. Saves theta to lpv_arx_theta.npy
+6. Reports one-step RMSE on the full dataset
+7. Plots a comparison between targetLateralAcceleration and simulated acceleration for a chosen route.
+
+Usage: Run the script -> get theta -> use in simulation/control design.
+"""
+
 import numpy as np
 import pandas as pd
 import glob
 from pathlib import Path
 import time
+from tinyphysics import CONTROL_START_IDX
+
 
 # ============================
 # Configuration
 # ============================
 
 DATA_DIR = Path("data")
-MAX_ROUTES = 1000        # <<< key speed knob
-LAMBDA_RIDGE = 1e-4
+MAX_ROUTES = 1000
+LAMBDA_RIDGE = 1e-4     # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 2
-NDELTA = 3
-BASIS_DIM = 3  # number of basis functions per regressor (const + v + v²)
+NA = 2                  # Use 2 past ay values
+NDELTA = 3              # Use 3 past steering commands (Observed sample delay)
+BASIS_DIM = 3           # number of basis functions per regressor (const + v + v²)
+NUM_EXO_VAR = 3         # number of exogenous inputs (vEgo, aEgo, roll)
 
-CONTROL_START_IDX = 100
-MIN_SPEED = 3
+FEATURE_DIM = BASIS_DIM * (NA + NDELTA + NUM_EXO_VAR)   # Total columns in the feature matrix.
+                                                        # Each regressor (past ay, past steer, exogenous) gets 3 basis terms (1, v, v²)
+                                                        # So 3 * (2 + 3 + 3) = 24 total parameters.
+
+MIN_SPEED = 3           # [m/s] — Excluding low speeds to avoid highly non-linear behavior
 
 # ============================
 # LPV basis
 # ============================
 
 def lpv(v):
+    """
+    Compute the LPV basis functions for speed vEgo.
+    
+    Args:
+        v (np.ndarray): Speed values (shape: (N,)).
+    
+    Returns:
+        np.ndarray: Basis matrix (N, 3) with columns [1, v, v²] for quadratic dependence.
+    
+    Logic: Each regressor (past ay, steer, exogenous) is multiplied by this basis
+    to create speed-varying coefficients. Quadratic term captures v² physics in turning.
+    """
     return np.stack([np.ones_like(v), v, v**2], axis=1)  # (N,3)
 
-
-FEATURE_DIM = 3 * (NA + NDELTA + 3)
 
 # ============================
 # Data Loading
 # ============================
 
 def load_routes():
+    """
+    Load a list of CSV file paths from the data directory.
+    
+    Returns:
+        list: Sorted list of file paths, limited to MAX_ROUTES.
+    
+    Logic: Prepares the file list for batch processing without loading data yet.
+    """    
     files = sorted(glob.glob(str(DATA_DIR / "*.csv")))
     files = files[:MAX_ROUTES]
     return files
@@ -44,6 +93,19 @@ def load_routes():
 # ============================
 
 def build_regression(files):
+    """
+    Build the feature matrix X and target y from multiple CSV routes.
+    
+    Args:
+        files (list): List of CSV file paths.
+    
+    Returns:
+        tuple: (X: np.ndarray (total_samples, FEATURE_DIM), y: np.ndarray (total_samples,))
+    
+    Logic: For each file, extract signals, filter finite values, and create shifted regressors
+    (past ay/steer * LPV basis + current exogenous * LPV basis). Stack all files into one big
+    dataset for batch fitting. Vectorized for speed; skips short/invalid files.
+    """    
     X_blocks = []
     y_blocks = []
 
@@ -72,7 +134,9 @@ def build_regression(files):
         roll  = df[roll_col].values
 
         # Create a mask for rows where ALL relevant columns are finite
-        finite_mask = (
+        valid_mask = (
+            (np.arange(len(df)) < CONTROL_START_IDX) &
+            (v >= MIN_SPEED) &
             np.isfinite(ay) &
             np.isfinite(steer) &
             np.isfinite(v) &
@@ -80,46 +144,49 @@ def build_regression(files):
             np.isfinite(roll)
         )
 
-        if not np.any(finite_mask):
+        if not np.any(valid_mask):
             print(f"No finite rows in {Path(f).name}")
             continue
 
         # Apply mask
-        ay    = ay[finite_mask]
-        steer = steer[finite_mask]
-        v     = v[finite_mask]
-        a     = a[finite_mask]
-        roll  = roll[finite_mask]
+        ay    = ay[valid_mask]
+        steer = steer[valid_mask]
+        v     = v[valid_mask]
+        a     = a[valid_mask]
+        roll  = roll[valid_mask]
 
         N = len(ay)
-        k0 = max(NA, NDELTA)
-        Ns = N - k0
+        k0 = max(NA, NDELTA)        # Minimum number of time steps we need to skip at the beginning of each route so that we have enough past history for every prediction.
+        Ns = N - k0                 # Number of usable prediction samples we can extract
 
         if Ns <= 0:
             continue
 
-        phi = np.zeros((Ns, FEATURE_DIM))
+        phi = np.zeros((Ns, FEATURE_DIM))   # The feature matrix.
+                                            # Each row = one usable time step
+                                            # Each column = one "feature" (a lagged value multiplied by one part of the LPV basis)
+                                            # Partial one row example: ay[k-1] × [1, v[k], v[k]²], ay[k-2] × [1, v[k], v[k]²], delta[k-1] × [1, v[k], v[k]²], ...
 
-        v_lpv = lpv(v[k0:])   # (Ns,3)
+        v_lpv = lpv(v[k0:])                 # Matrix that holds the LPV basis values for each time step. In our case: (1, v, v**2). (Ns,3)
 
         col = 0
 
         # ---- AR terms ----
         for i_lag in range(1, NA + 1):
             ay_lag = ay[k0 - i_lag : N - i_lag]
-            phi[:, col:col+3] = v_lpv * ay_lag[:, None]
-            col += 3
+            phi[:, col:col+BASIS_DIM] = v_lpv * ay_lag[:, None]
+            col += BASIS_DIM
 
         # ---- Steering terms ----
         for d_lag in range(1, NDELTA + 1):
             steer_lag = steer[k0 - d_lag : N - d_lag]
-            phi[:, col:col+3] = v_lpv * steer_lag[:, None]
-            col += 3
+            phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
+            col += BASIS_DIM
 
         # ---- Exogenous inputs ----
         for z in (v[k0:], a[k0:], roll[k0:]):
-            phi[:, col:col+3] = v_lpv * z[:, None]
-            col += 3
+            phi[:, col:col+BASIS_DIM] = v_lpv * z[:, None]
+            col += BASIS_DIM
 
         X_blocks.append(phi)
         y_blocks.append(ay[k0:])
@@ -148,6 +215,20 @@ def build_regression(files):
 # ============================
 
 def ridge_regression(X, y, lam):
+    """
+    Fit LPV-ARX parameters using ridge regression (regularized least squares).
+    
+    Args:
+        X (np.ndarray): Feature matrix (samples, features).
+        y (np.ndarray): Target vector (samples,).
+        lam (float): Ridge penalty strength.
+    
+    Returns:
+        np.ndarray: Learned parameters theta (features,).
+    
+    Logic: Solves (X^T X + λ I) θ = X^T y for stable, shrunk coefficients.
+    Prevents overfitting by penalizing large θ values.
+    """    
     n = X.shape[1]
     return np.linalg.solve(
         X.T @ X + lam * np.eye(n),
@@ -169,18 +250,21 @@ def plot_simulation_on_file(theta, file_path, na=NA, ndelta=NDELTA):
     roll  = df["roll"].values
 
     # Use the same filtering as in training
-    valid = (
-        (np.arange(len(df)) >= CONTROL_START_IDX) &
+    valid_mask = (
+        (np.arange(len(df)) < CONTROL_START_IDX) &
         (v >= MIN_SPEED) &
         np.isfinite(ay) &
-        np.isfinite(v)
-    )
+        np.isfinite(steer) &
+        np.isfinite(v) &
+        np.isfinite(a) &
+        np.isfinite(roll)
+    )      
 
-    ay    = ay[valid]
-    steer = steer[valid]
-    v     = v[valid]
-    a     = a[valid]
-    roll  = roll[valid]
+    ay    = ay[valid_mask]
+    steer = steer[valid_mask]
+    v     = v[valid_mask]
+    a     = a[valid_mask]
+    roll  = roll[valid_mask]
 
     if len(ay) < max(na, ndelta) + 50:
         print(f"File too short after filtering: {len(ay)} steps")
@@ -188,7 +272,7 @@ def plot_simulation_on_file(theta, file_path, na=NA, ndelta=NDELTA):
 
     # Simulate
     y_sim = np.zeros(len(ay))
-    y_sim[:na] = ay[:na]  # warm-up with real values
+    y_sim[:max(na, ndelta)] = ay[:max(na, ndelta)]  # warm-up with real values    
 
     for k in range(max(na, ndelta), len(ay)):
         pred = 0.0
@@ -217,8 +301,8 @@ def plot_simulation_on_file(theta, file_path, na=NA, ndelta=NDELTA):
     # Plot
     import matplotlib.pyplot as plt
     plt.figure(figsize=(12, 6))
-    plt.plot(ay, label='Actual ay', linewidth=1.4, alpha=0.9)
-    plt.plot(y_sim, label='Simulated ay', linewidth=2.0, linestyle='--', color='red')
+    plt.plot(y_sim[1:], label='Simulated (shifted forward 1)', linestyle='--', color='red')
+    plt.plot(ay[:-1], label='Actual ay (shifted back 1)', alpha=0.7)
     plt.title(f"Actual vs Simulated Lateral Acceleration\n{Path(file_path).name}")
     plt.xlabel("Time step")
     plt.ylabel("Lateral acceleration [m/s²]")
