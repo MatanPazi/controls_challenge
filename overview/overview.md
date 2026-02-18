@@ -142,11 +142,24 @@ As an initial step, I'll include the last three previous steering commands.
 I'd rather keep the state dimension as small as possible.
 The # of sample delays can be adjusted later if needed.
 
-## Model identification
+### Model Description
 
-# TODO
-Add description + img of resulting plot
+The final model is a Linear Parameter-Varying AutoRegressive with eXogenous input (LPV-ARX) structure.  
+The LPV-ARX model was chosen since it seemed to fit the dynamics pretty well, the dynamics are very strongly longitudinal speed dependent, so linearly adjusting the coefficients based on the speed basis is great and it's a simple enough model to tune.  
+All coefficients are dependent on a quadratic basis in longitudinal speed $v_{x,k}$:
 
+$$
+\begin{bmatrix}
+1 & v_{x,k} & v_{x,k}^2
+\end{bmatrix}
+$$
+
+This gives a total of 24 parameters (3 basis terms x (2 ay + 3 δ + 3 exogenous)).
+
+Here is a comparison between model and actual data for a selected .csv:
+![Lat accel vs Time sample](actual_vs_sim_lat_acc_csv_00100.png)
+
+The model was implemented and fitted in `lpv_arx.py`, see the script for more details.
 
 ### Noise
 
