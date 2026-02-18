@@ -126,14 +126,17 @@ $$
 
 ### Delay
 
-The effective sample delay in the TinyPhysics ONNX model was identified.
+The effective sample delay in the TinyPhysics ONNX model was identified using the test_delay.py script.  
 This was done by comparing lateral acceleration trajectories between a zero-steer controller and a constant step-steer controller on real driving segments.
 
 The delay was measured by how many simulation steps pass after control start (CONTROL_START_IDX) 
 before the step response noticeably diverges from the zero-steer baseline.
 
 The result was varried. A minimum of 1 sample delay and a maximum of 5 samples were detected.
-Though the majority of routes exhibited 2 sample delays, with a linearly decreasing number of routes exhibiting higher sample delays.
+Though the majority of routes exhibited 2 sample delays, with a relatively linearly decreasing number of routes exhibiting higher sample delays.
+
+Here is the test_delay.py script output:
+![# of routes vs sample delay](test_delay_100_routes.png)
 
 As an initial step, I'll include the last three previous steering commands.
 I'd rather keep the state dimension as small as possible.
@@ -142,20 +145,7 @@ The # of sample delays can be adjusted later if needed.
 ## Model identification
 
 # TODO
-
-LPV-ARX with quadratic v dependence.  
-See "1. LPV-ARX (Recommended starting point - simplest & very effective)" in 
-https://x.com/i/grok/share/81de057bd5c04c3db0f21f64fbc5b387
-
-Convert it to state-space form (use control.tf2ss or manually for ARX → SS).  
-Validate on 20–30 hold-out segments : One-step prediction error  
-Free-run simulation error (most important for MPC)  
-Step-response overlay vs TinyPhysics (should match within ~0.05 m/s²)  
-
-If simulation error > ~0.08 m/s² RMS → try Option 2 (gain-scheduled) or add one more lag.
-Once happy → noise identification (process + measurement covariance from residuals) → you’re ready for LQG / Tube-MPC / Stochastic MPC.
-
-
+Add description + img of resulting plot
 
 
 ### Noise
