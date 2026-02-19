@@ -1,6 +1,10 @@
 """
 ukf_observer.py
 
+Lovely video explaining the particle filter, "Particle Filter Explained without Equations":
+https://youtu.be/aUkBa1zMKv4?si=IRPw7ddYIXQdBopd
+Need to make one for the UKF..
+
 Implements an Unscented Kalman Filter (UKF) for state estimation using the fitted LPV-ARX model.
 Estimates the full state [ay_k, ay_{k-1}, δ_{k-1}, δ_{k-2}, δ_{k-3}, b_k] from noisy ay measurements.
 
@@ -289,4 +293,5 @@ if __name__ == "__main__":
     plt.show()
 
     print(f"Final filtered bias estimate: {ukf.x[5]:.6f}")
+
     print("Done. Tune R/Q and re-run until filtered trace is smooth but responsive.")
