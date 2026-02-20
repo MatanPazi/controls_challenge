@@ -41,7 +41,7 @@ Q_diag = [0.015, 0.008, 1e-6, 1e-6, 1e-6, 1e-5]  # Process noise on [ay_k, ay_{k
 
 # UKF hyperparameters (standard defaults, rarely need to change)
 alpha = 1e-3        # Spread of sigma points
-beta  = 2.0         # For Gaussian, optimal = 2
+beta  = 0.0         # For Gaussian, optimal = 2
 kappa = 0.0         # Secondary scaling
 
 # ──────────────────────────────────────────────
