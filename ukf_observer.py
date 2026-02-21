@@ -39,7 +39,8 @@ TEST_FILE  = "data/00010.csv"  # change to any hold-out route you like
 R = 0.003           # Measurement noise variance (inflated ~5× from raw measured 0.00058)
 Q_diag = [0.015, 0.008, 1e-6, 1e-6, 1e-6, 1e-5]  # Process noise on [ay_k, ay_{k-1}, δ1, δ2, δ3, b_k]
 
-# UKF hyperparameters (standard defaults, rarely need to change)
+# UKF hyperparameters.
+# Values are mathematically derived, see: S. J. Julier “The Scaled Unscented Transformation”
 alpha = 1e-3        # Spread of sigma points
 beta  = 0.0         # For Gaussian, optimal = 2
 kappa = 0.0         # Secondary scaling
@@ -57,11 +58,27 @@ print(f"Loaded theta from {THETA_FILE} — shape: {theta.shape}")
 
 def predict_state(x, u, zeta, theta):
     """
-    x: current state (6,)
-    u: current steer command δ_k
-    zeta: current exogenous [v_k, a_k, r_k]
-    theta: fitted parameters (24,)
-    Returns: predicted x_{k+1} (6,)
+    State transition function for the LPV-ARX model.
+
+    Parameters
+    ----------
+    x : ndarray, shape (6,)
+        Current state vector:
+        [ay_k, ay_{k-1}, δ_{k-1}, δ_{k-2}, δ_{k-3}, b_k]
+
+    u : float
+        Current steering command δ_k.
+
+    zeta : ndarray, shape (3,)
+        Exogenous inputs [v_k, a_k, roll_k].
+
+    theta : ndarray
+        Identified LPV-ARX parameter vector.
+
+    Returns
+    -------
+    x_next : ndarray, shape (6,)
+        Predicted next state x_{k+1}.
     """
     # Extract components
     ay_k      = x[0]
@@ -137,6 +154,22 @@ class UKF:
 
     # ──────────────────────────────────────────
     def sigma_points(self, x, P):
+        """
+        Generate Unscented Transform sigma points.
+
+        Parameters
+        ----------
+        x : ndarray, shape (n,)
+            Current state mean.
+
+        P : ndarray, shape (n, n)
+            Current state covariance.
+
+        Returns
+        -------
+        sigmas : ndarray, shape (2n+1, n)
+            Sigma points representing the distribution N(x, P).
+        """        
         P = 0.5 * (P + P.T)                      # enforce symmetry
         P += self.jitter * np.eye(self.n)        # jitter
 
@@ -152,6 +185,28 @@ class UKF:
 
     # ──────────────────────────────────────────
     def predict(self, u, zeta):
+        """
+        UKF prediction step.
+
+        Propagates the current state estimate and covariance forward
+        through the nonlinear process model using sigma points.
+
+        Parameters
+        ----------
+        u : float
+            Control input at time k.
+
+        zeta : ndarray
+            Exogenous inputs at time k.
+
+        Updates
+        -------
+        self.x : ndarray
+            Predicted state mean x_{k|k-1}.
+
+        self.P : ndarray
+            Predicted state covariance P_{k|k-1}.
+        """        
         X = self.sigma_points(self.x, self.P)
 
         Xp = np.array([
@@ -172,6 +227,22 @@ class UKF:
 
     # ──────────────────────────────────────────
     def update(self, y_meas):
+        """
+        UKF measurement update step.
+
+        Incorporates a scalar measurement into the predicted state
+        estimate using the Unscented Transform.
+
+        Parameters
+        ----------
+        y_meas : float
+            Measured lateral acceleration ay_k.
+
+        Returns
+        -------
+        innovation : float
+            Measurement innovation (y_k - ŷ_k).
+        """        
         X = self.sigma_points(self.x, self.P)
 
         # Measurement model: y = ay_k = x[0]
