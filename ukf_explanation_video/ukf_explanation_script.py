@@ -1,11 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from scipy.stats import norm  # For Gaussian PDF plotting
+import sys
+import os
 
 
+# Get the directory of the current script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory
+parent_dir = os.path.dirname(current_dir)
+# Add the parent directory to sys.path
+sys.path.append(parent_dir)
+# Now I can import the desired class
+from ukf_observer import UKF
+
+# Terrain constants
 HILL_AMP = 30
 WATER_HEIGHT = 4
 Y_LIM = 75
+
+# UKF and simulation constants
+STATE_DIM = 1           # 1D position x
+V_SPEED = 1.0           # Constant speed (units per step)
+DT = 1.0                # Time step
+Q_VAR = 0.5             # Process noise variance
+R_VAR = 2.0             # Measurement noise variance
+INITIAL_X = 50.0        # Initial UKF mean (uncertain)
+INITIAL_P = 10000.0     # Large initial covariance
+NUM_STEPS = 80          # Simulation steps (to cross terrain)
+TRUE_START_X = 10.0     # True bird starting position
 
 def generate_terrain(x):
     """
@@ -146,8 +170,8 @@ if __name__ == "__main__":
     fig, ax, _, _ = plot_terrain(show=False)
 
     # # Mark a few example positions
-    # mark_position(15, fig, ax, color='red')
-    # mark_position(28, fig, ax, color='darkorange')
+    mark_position(15, fig, ax, color='red')
+    mark_position(28, fig, ax, color='darkorange')
     # mark_position(75, fig, ax, color='purple')
     # mark_position(50, fig, ax, color='black')  # middle gap
 
