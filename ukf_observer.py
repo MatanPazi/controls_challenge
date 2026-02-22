@@ -127,11 +127,12 @@ def predict_state(x, u, zeta, theta):
 # ──────────────────────────────────────────────
 
 class UKF:
-    def __init__(self, n, R, Q_diag,
+    def __init__(self, n, R, Q_diag, theta,
                  alpha=1e-3, beta=2.0, kappa=0.0):
         self.n = n
         self.R = float(R)
         self.Q = np.diag(Q_diag)
+        self.theta = theta
 
         self.alpha = alpha
         self.beta = beta
@@ -210,7 +211,7 @@ class UKF:
         X = self.sigma_points(self.x, self.P)
 
         Xp = np.array([
-            predict_state(X[i], u, zeta, theta)
+            predict_state(X[i], u, zeta, self.theta)
             for i in range(2*self.n + 1)
         ])
 
@@ -315,7 +316,7 @@ if __name__ == "__main__":
 
     # Initialize UKF
     n = 6
-    ukf = UKF(n, R, Q_diag)
+    ukf = UKF(n, R, Q_diag, theta)
 
     # Run filter
     filtered_ay = []
