@@ -139,24 +139,20 @@ def add_png_bird(ax, png_file, x_pct=0.20, y_pct=0.80, zoom=0.12, flip=True, zor
 
 if __name__ == "__main__":
 
-    import os, pathlib, sys
-    print("CWD:", os.getcwd())
-    print("Script file:", __file__ if '__file__' in globals() else '(interactive)')
-    print("Files in CWD:", [p for p in os.listdir('.') if p.lower().endswith('.png')])
     # 1. Just show the base terrain
     # plot_terrain()
 
     # 2. Or create base plot and mark one or more positions
     fig, ax, _, _ = plot_terrain(show=False)
 
-    # Mark a few example positions
-    mark_position(15, fig, ax, color='red')
-    mark_position(28, fig, ax, color='darkorange')
-    mark_position(75, fig, ax, color='purple')
-    mark_position(50, fig, ax, color='black')  # middle gap
+    # # Mark a few example positions
+    # mark_position(15, fig, ax, color='red')
+    # mark_position(28, fig, ax, color='darkorange')
+    # mark_position(75, fig, ax, color='purple')
+    # mark_position(50, fig, ax, color='black')  # middle gap
 
     
-    # NEW: add a bird at 20% along x and 80% of y-range
+    # Add a bird at 20% along x and 80% of y-range
     add_png_bird(
         ax,
         png_file='ukf_explanation_video\Stork_silhouette.png',  # <-- your saved PNG
