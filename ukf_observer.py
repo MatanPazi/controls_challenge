@@ -128,11 +128,23 @@ def predict_state(x, u, zeta, theta):
 
 class UKF:
     def __init__(self, n, R, Q_diag, theta,
+                 predict_state=None, measure_state = None,
                  alpha=1e-3, beta=2.0, kappa=0.0):
         self.n = n
         self.R = float(R)
         self.Q = np.diag(Q_diag)
         self.theta = theta
+
+        # Store the user-provided prediction function
+        if predict_state is None:
+            raise ValueError("predict_state function must be provided")
+        self.predict_state = predict_state        
+
+        if measure_state is None:
+            def default_measure(s, theta): return s[0]  # observe position
+            self.measure_state = default_measure
+        else:
+            self.measure_state = measure_state
 
         self.alpha = alpha
         self.beta = beta
@@ -211,7 +223,7 @@ class UKF:
         X = self.sigma_points(self.x, self.P)
 
         Xp = np.array([
-            predict_state(X[i], u, zeta, self.theta)
+            self.predict_state(X[i], u, zeta, self.theta)
             for i in range(2*self.n + 1)
         ])
 
@@ -246,8 +258,8 @@ class UKF:
         """        
         X = self.sigma_points(self.x, self.P)
 
-        # Measurement model: y = ay_k = x[0]
-        Z = X[:, 0]
+        # Map sigma points to measurement space using user function
+        Z = np.array([self.measure_state(sig, self.theta) for sig in X])
 
         z_hat = np.sum(self.Wm * Z)
 
@@ -316,7 +328,7 @@ if __name__ == "__main__":
 
     # Initialize UKF
     n = 6
-    ukf = UKF(n, R, Q_diag, theta)
+    ukf = UKF(n, R, Q_diag, theta, predict_state)
 
     # Run filter
     filtered_ay = []
