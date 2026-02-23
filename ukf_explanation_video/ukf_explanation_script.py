@@ -29,11 +29,11 @@ Y_LIM = 75
 STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
 DT = 1.0                # Time step
-Q_VAR = [0.02, 0.001]     # Q_diag for pos and vel noise
-R_VAR = 0.020             # Measurement noise variance
+Q_VAR = [0.2, 0.001]     # Q_diag for pos and vel noise
+R_VAR = np.diag([0.02, 0.5]) # Measurement noise variance
 INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
-INITIAL_P = np.diag([50.0, 5.0])  # separate variances
+INITIAL_P = np.diag([50.0, 1.0])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
 TRUE_START_X = 10.0     # True bird starting position
 
@@ -50,6 +50,13 @@ def h(x):
     y_surface = np.maximum(y_hills, WATER_HEIGHT)
 
     return float(y_surface[0]) if was_scalar else y_surface
+
+def dhdx(x, eps=1e-2):
+    """
+    Numerical derivative of terrain height wrt x.
+    Measures local observability strength.
+    """
+    return (h(x + eps) - h(x - eps)) / (2 * eps)    
 
 
 def generate_terrain(x):
@@ -124,28 +131,6 @@ def mark_position(x_pos, fig=None, ax=None, color='red', label=True):
     return fig, ax
 
 
-
-def simulate_trajectory():
-    true_state = np.zeros((NUM_STEPS, 2))  # [pos, vel]
-    measurements = np.zeros(NUM_STEPS)
-    
-    true_state[0] = [TRUE_START_X, V_SPEED]  # initial pos + vel
-    measurements[0] = h(true_state[0, 0]) + np.random.normal(0, np.sqrt(R_VAR))
-    
-    for k in range(1, NUM_STEPS):
-        pos, vel = true_state[k-1]
-        
-        # Add process noise to both states
-        noise = np.random.normal(0, np.sqrt(Q_VAR))  # shape (2,)
-        pos_next = pos + vel * DT + noise[0]
-        vel_next = vel + noise[1]  # velocity can drift slowly
-        
-        true_state[k] = [pos_next, vel_next]
-        measurements[k] = h(pos_next) + np.random.normal(0, np.sqrt(R_VAR))
-    
-    true_x = true_state[:, 0]  # only return positions for plotting
-    return true_x, measurements
-
 def bird_predict_state(x, u, zeta, theta=None):
     pos, vel = x
     # Simple kinematic model
@@ -154,12 +139,13 @@ def bird_predict_state(x, u, zeta, theta=None):
     return np.array([pos_next, vel_next])
 
 def bird_measure_state(x, theta=None):
-    """
-    Measurement model:
-    z = terrain height at x-position
-    """
-    pos = x[0]
-    return np.array([h(pos)])  # must return 1D array
+    pos, vel = x
+
+    height = h(pos)
+    slope = dhdx(pos)
+    height_rate = slope * vel
+
+    return np.array([height, height_rate])
 
 
 def add_png_bird(ax, png_file, x_pct=0.20, y_pct=0.80, zoom=0.12, flip=True, zorder=30):
@@ -229,7 +215,7 @@ true_vel = V_SPEED
 
 ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR, theta=theta, 
           predict_state=bird_predict_state, measure_state=bird_measure_state,
-          alpha=1e-3, beta=2.0, kappa=0.0)
+          alpha=0.3, beta=2.0, kappa=0.0)
 ukf.x = np.array([INITIAL_X, V_SPEED])
 ukf.P = INITIAL_P.copy()
 
@@ -243,12 +229,23 @@ def update(frame):
     true_vel += noise[1]
     
     # 2. Measurement (Terrain height bird "feels")
-    measurement = h(true_pos) + np.random.normal(0, np.sqrt(R_VAR))
+    measurement = np.array([h(true_pos), dhdx(true_pos) * true_vel]) + np.random.multivariate_normal([0, 0], R_VAR)
+
+    slope = dhdx(true_pos)
 
     # 3. UKF Update
     ukf.predict(u=0, zeta=None)
     ukf.update(measurement)
     est_pos = ukf.x[0]
+
+    if frame % 5 == 0:
+        print(
+            f"k={frame:02d}  "
+            f"true_x={true_pos:6.2f}  "
+            f"est_x={est_pos:6.2f}  "
+            f"slope={slope:7.4f}  "
+            f"Pxx={ukf.P[0,0]:7.2f}"
+        )        
 
     # --- Update Visuals ---
 
