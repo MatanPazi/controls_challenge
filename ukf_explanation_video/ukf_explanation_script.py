@@ -16,10 +16,6 @@ sys.path.append(parent_dir)
 # Now I can import the desired class
 from ukf_observer import UKF
 
-# Load theta once at startup (shared by all UKF instances)
-theta_path = os.path.join(parent_dir, 'lpv_arx_theta.npy')
-theta = np.load(theta_path)
-
 # Terrain constants
 HILL_AMP = 30
 WATER_HEIGHT = 4
@@ -28,14 +24,14 @@ Y_LIM = 75
 # UKF and simulation constants
 STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
-DT = 1.0                # Time step
-Q_VAR = [0.2, 0.001]     # Q_diag for pos and vel noise
-R_VAR = np.diag([0.02, 0.5]) # Measurement noise variance
-INITIAL_X = 15.0        # start pos
+DT = 0.1                # Time step
+Q_VAR = [0.05, 0.001]     # Q_diag for pos and vel noise
+R_VAR = np.diag([0.02, 0.005]) # Measurement noise variance
+INITIAL_X = 5.0        # start pos
 V_SPEED = 1.0           # nominal vel
-INITIAL_P = np.diag([50.0, 1.0])  # separate variances
+INITIAL_P = np.diag([20.0, 0.5])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
-TRUE_START_X = 10.0     # True bird starting position
+TRUE_START_X = 20.0     # True bird starting position
 
 def h(x):
     """
@@ -140,12 +136,9 @@ def bird_predict_state(x, u, zeta, theta=None):
 
 def bird_measure_state(x, theta=None):
     pos, vel = x
-
-    height = h(pos)
-    slope = dhdx(pos)
-    height_rate = slope * vel
-
-    return np.array([height, height_rate])
+    height   = h(pos)
+    velocity = vel
+    return np.array([height, velocity])
 
 
 def add_png_bird(ax, png_file, x_pct=0.20, y_pct=0.80, zoom=0.12, flip=True, zorder=30):
@@ -213,9 +206,9 @@ est_line = ax.axvline(0, color='red', ls='--', alpha=0.7, zorder=10, lw=1.2)
 true_pos = TRUE_START_X
 true_vel = V_SPEED
 
-ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR, theta=theta, 
+ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR, 
           predict_state=bird_predict_state, measure_state=bird_measure_state,
-          alpha=0.3, beta=2.0, kappa=0.0)
+          alpha=0.1, beta=2.0, kappa=0.0)
 ukf.x = np.array([INITIAL_X, V_SPEED])
 ukf.P = INITIAL_P.copy()
 
@@ -227,23 +220,26 @@ def update(frame):
     noise = np.random.normal(0, np.sqrt(Q_VAR))
     true_pos += true_vel * DT + noise[0]
     true_vel += noise[1]
+    true_vel = np.clip(true_vel, 0.8, 1.2)
     
-    # 2. Measurement (Terrain height bird "feels")
-    measurement = np.array([h(true_pos), dhdx(true_pos) * true_vel]) + np.random.multivariate_normal([0, 0], R_VAR)
+    # 2. Measurement (now: height + direct velocity)
+    true_height = h(true_pos)
+    true_velocity = true_vel
+    measurement = np.array([true_height, true_velocity]) + \
+                  np.random.multivariate_normal([0, 0], R_VAR)
 
-    slope = dhdx(true_pos)
 
     # 3. UKF Update
     ukf.predict(u=0, zeta=None)
     ukf.update(measurement)
     est_pos = ukf.x[0]
+    est_vel = ukf.x[1]
 
     if frame % 5 == 0:
         print(
             f"k={frame:02d}  "
             f"true_x={true_pos:6.2f}  "
             f"est_x={est_pos:6.2f}  "
-            f"slope={slope:7.4f}  "
             f"Pxx={ukf.P[0,0]:7.2f}"
         )        
 
