@@ -29,24 +29,24 @@ Y_LIM = 75
 STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
 DT = 1.0                # Time step
-Q_VAR = [0.01, 0.001]     # Q_diag for pos and vel noise
-R_VAR = 0.010             # Measurement noise variance
-INITIAL_X = 20.0        # start pos
+Q_VAR = [0.02, 0.001]     # Q_diag for pos and vel noise
+R_VAR = 0.020             # Measurement noise variance
+INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
-INITIAL_P = np.diag([500.0, 1.0])  # separate variances
+INITIAL_P = np.diag([50.0, 5.0])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
 TRUE_START_X = 10.0     # True bird starting position
 
 def h(x):
     """
-    Surface height: max(hill, WATER_HEIGHT)
+    Physical surface height seen by the bird.
     """
     x = np.asarray(x)
     was_scalar = x.ndim == 0
     if was_scalar:
         x = x[None]
 
-    y_hills = np.interp(x, TERRAIN_X, TERRAIN_Y, left=0.0, right=0.0)
+    y_hills = np.interp(x, TERRAIN_X, TERRAIN_Y)
     y_surface = np.maximum(y_hills, WATER_HEIGHT)
 
     return float(y_surface[0]) if was_scalar else y_surface
@@ -54,32 +54,27 @@ def h(x):
 
 def generate_terrain(x):
     """
-    Compute terrain height y(x) — same logic as before.
-    Returns array of heights (green hills), zero elsewhere.
+    Raw terrain height (hills only).
+    Water is NOT applied here.
     """
-    period = 66
-    omega = 2 * np.pi / period
+    x = np.asarray(x)
 
-    y_template = (
-        1.00 * np.sin(1 * omega * x) +
-        0.40 * np.sin(5 * omega * x) +
-        0.25 * np.sin(7 * omega * x)
+    w1 = 2 * np.pi / 70
+    w2 = 2 * np.pi / 23
+    w3 = 2 * np.pi / 11
+
+    amp = 15 + 0.15 * x + 3 * np.sin(2 * np.pi * x / 90)
+    bias = 2 * np.sin(2 * np.pi * x / 120)
+
+    hills = (
+        1.1 * np.sin(w1 * x + 0.3) +
+        0.6 * np.sin(w2 * x + 1.1) +
+        0.2 * np.sin(w3 * x + 2.4)
     )
 
-    mask_left = (x <= 33)
-    y_left = y_template.copy()
-    y_left[~mask_left] = 0.0
+    y = amp * hills + bias
 
-    min_val = np.min(y_left[mask_left])
-    max_val = np.max(y_left[mask_left])
-    y_left_scaled = HILL_AMP * (y_left - min_val) / (max_val - min_val)
-
-    # Mirror right side
-    y_right_scaled = np.zeros_like(x)
-    left_len = np.sum(mask_left)
-    y_right_scaled[-left_len:] = 1.5 * y_left_scaled[:left_len][::-1]
-
-    return y_left_scaled + y_right_scaled
+    return y
 
 
 def plot_terrain(show=True, figsize=(12, 6)):
@@ -150,37 +145,6 @@ def simulate_trajectory():
     
     true_x = true_state[:, 0]  # only return positions for plotting
     return true_x, measurements
-
-
-
-def run_ukf(measurements):
-    ukf = UKF(
-        n=STATE_DIM,
-        R=R_VAR,
-        Q_diag=Q_VAR,
-        theta=theta,
-        predict_state=bird_predict_state,
-        alpha=1e-3, beta=2.0, kappa=0.0
-    )
-    
-    ukf.x = np.array([INITIAL_X, V_SPEED])  # flat 1D
-    ukf.P = INITIAL_P.copy()
-    
-    # Store full state
-    estimates = np.zeros((NUM_STEPS, STATE_DIM))
-    covariances = np.zeros(NUM_STEPS)  # just pos variance for simplicity
-    
-    estimates[0] = ukf.x
-    covariances[0] = ukf.P[0,0]
-    
-    for k in range(1, NUM_STEPS):
-        ukf.predict(u=0, zeta=None)  # adjust u if needed for 2-state
-        ukf.update(measurements[k])
-        
-        estimates[k] = ukf.x
-        covariances[k] = ukf.P[0,0]  # pos variance
-    
-    return estimates, covariances
 
 def bird_predict_state(x, u, zeta, theta=None):
     pos, vel = x
@@ -269,6 +233,7 @@ ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR, theta=theta,
 ukf.x = np.array([INITIAL_X, V_SPEED])
 ukf.P = INITIAL_P.copy()
 
+uncertainty_fill = ax.axvspan(0, 0, color='red', alpha=0.2)
 def update(frame):
     global true_pos, true_vel, bird_marker
 
@@ -293,6 +258,18 @@ def update(frame):
     est_line.set_xdata([est_pos])
     # Adjust vertical line height
     est_line.set_ydata([surface_h/Y_LIM, 1.0]) 
+
+    est_pos = ukf.x[0]
+    std_dev = np.sqrt(ukf.P[0,0])
+    
+    # Update the "Confidence Cloud"
+    # Show 2 standard deviations (95% confidence)
+    left_bound = est_pos - 2 * std_dev
+    right_bound = est_pos + 2 * std_dev
+    
+    global uncertainty_fill
+    uncertainty_fill.remove() # Clear old fill
+    uncertainty_fill = ax.axvspan(left_bound, right_bound, color='red', alpha=0.15)    
 
     # Update Bird PNG
     if bird_marker:
