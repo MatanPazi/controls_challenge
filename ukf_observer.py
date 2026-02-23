@@ -122,16 +122,31 @@ def predict_state(x, u, zeta, theta):
 
     return pred
 
+def measure_state(x, theta):
+    """
+    Measurement function h(x).
+    Maps the state vector to the observed measurement space.
+    """
+    ay_k = x[0]
+    b_k  = x[5]
+    
+    # If the measurement is simply the first state:
+    return np.array([ay_k]) 
+    
+    # If the bias in the state vector is additive to the measurement:
+    # return np.array([ay_k + b_k])
+
 # ──────────────────────────────────────────────
 # UKF Class (simplified discrete-time version)
 # ──────────────────────────────────────────────
 
 class UKF:
     def __init__(self, n, R, Q_diag, theta,
-                 predict_state=None, measure_state = None,
+                 predict_state=None, measure_state = measure_state,
                  alpha=1e-3, beta=2.0, kappa=0.0):
         self.n = n
-        self.R = float(R)
+        self.R = np.atleast_2d(R)  # Ensures [[val]] if scalar or [m,m] if matrix
+        self.m = self.R.shape[0]   # This is your measurement dimension
         self.Q = np.diag(Q_diag)
         self.theta = theta
 
@@ -255,37 +270,45 @@ class UKF:
         -------
         innovation : float
             Measurement innovation (y_k - ŷ_k).
-        """        
+        """            
         X = self.sigma_points(self.x, self.P)
 
-        # Map sigma points to measurement space using user function
+        # 1. Map sigma points to measurement space
+        # Z shape: (2n+1, m)
         Z = np.array([self.measure_state(sig, self.theta) for sig in X])
+        
+        # 2. Predicted measurement mean (weighted sum)
+        # z_hat shape: (m,)
+        z_hat = np.sum(self.Wm[:, None] * Z, axis=0)
 
-        z_hat = np.sum(self.Wm * Z)
-
-        # Innovation covariance
-        S = self.R
+        # 3. Innovation covariance S (m x m)
+        # S = sum(Wc * (Z-z_hat)(Z-z_hat)^T) + R
+        S = np.zeros((self.m, self.m))
         for i in range(2*self.n + 1):
             dz = Z[i] - z_hat
-            S += self.Wc[i] * dz * dz
+            S += self.Wc[i] * np.outer(dz, dz)
+        S += self.R  # Add measurement noise matrix
 
-        # Cross covariance
-        Pxz = np.zeros(self.n)
+        # 4. Cross covariance Pxz (n x m)
+        Pxz = np.zeros((self.n, self.m))
         for i in range(2*self.n + 1):
             dx = X[i] - self.x
             dz = Z[i] - z_hat
-            Pxz += self.Wc[i] * dx * dz
+            Pxz += self.Wc[i] * np.outer(dx, dz)
 
-        # Kalman gain
-        K = Pxz / S
+        # 5. Kalman gain (K = Pxz * inv(S))
+        # Use solve for better numerical stability than inv()
+        K = np.linalg.solve(S.T, Pxz.T).T
 
-        innovation = y_meas - z_hat
+        # 6. Innovation (y - z_hat)
+        # Ensure y_meas is a numpy array for vector subtraction
+        innovation = np.atleast_1d(y_meas) - z_hat
 
-        # State update
-        self.x = self.x + K * innovation
+        # 7. State update
+        self.x = self.x + K @ innovation
 
-        # Covariance update (Joseph-safe for scalar case)
-        self.P = self.P - np.outer(K, K) * S
+        # 8. Covariance update (Joseph form or standard)
+        self.P = self.P - K @ S @ K.T
         self.P = 0.5 * (self.P + self.P.T) + self.jitter * np.eye(self.n)
 
         return innovation
