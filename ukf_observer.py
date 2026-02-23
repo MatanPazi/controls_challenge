@@ -141,7 +141,7 @@ def measure_state(x, theta):
 # ──────────────────────────────────────────────
 
 class UKF:
-    def __init__(self, n, R, Q_diag, theta,
+    def __init__(self, n, R, Q_diag, theta = None,
                  predict_state=None, measure_state = measure_state,
                  alpha=1e-3, beta=2.0, kappa=0.0):
         self.n = n
