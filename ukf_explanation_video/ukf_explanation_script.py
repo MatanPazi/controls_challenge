@@ -171,114 +171,286 @@ def add_png_bird(ax, png_file, x_pct=0.20, y_pct=0.80, zoom=0.12, flip=True, zor
     )
     ax.add_artist(ab)
 
-
-# ────────────────────────────────────────────────
-# Example usage
-# ────────────────────────────────────────────────
-
 if __name__ == "__main__":
 
-    # Precompute terrain height at every integer x from 0 to 100 inclusive
-    TERRAIN_GRID_POINTS = 5000                     # 5000–10000 is usually plenty
+    # Precompute terrain
+    TERRAIN_GRID_POINTS = 5000
     TERRAIN_X = np.linspace(0, 100, TERRAIN_GRID_POINTS)
-    TERRAIN_Y = generate_terrain(TERRAIN_X)        # called only once
+    TERRAIN_Y = generate_terrain(TERRAIN_X)
 
+    # ── Figure & Axis ──
+    fig, ax = plt.subplots(figsize=(12, 6))
+    x_plot = np.linspace(0, 100, 2000)
+    y_plot = np.interp(x_plot, TERRAIN_X, TERRAIN_Y)
+    ax.fill_between(x_plot, 0, WATER_HEIGHT, color='#1E90FF', zorder=1)
+    ax.fill_between(x_plot, 0, y_plot, color='#228B22', zorder=2)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, Y_LIM)
+    ax.axis('off')
 
-# --- Animation Setup ---
+    # ── Artists ──
+    bird_marker = []
+    est_dot, = ax.plot([], [], 'o', color='red', ms=10, mec='white', mew=2, zorder=18, label='Posterior Estimate')
+    est_line = ax.axvline(0, color='red', ls='--', alpha=0.85, zorder=17, lw=1.5)
 
-fig, ax = plt.subplots(figsize=(12, 6))
+    pred_dot, = ax.plot([], [], 'o', color='purple', ms=9, mec='white', mew=1.5, zorder=16, label='Predicted Estimate')
+    pred_line = ax.axvline(0, color='purple', ls=':', alpha=0.7, zorder=15, lw=1.2)
 
-# Plot static terrain once
-x_plot = np.linspace(0, 100, 2000)
-y_plot = np.interp(x_plot, TERRAIN_X, TERRAIN_Y)
-ax.fill_between(x_plot, 0, WATER_HEIGHT, color='#1E90FF', zorder=1)
-ax.fill_between(x_plot, 0, y_plot, color='#228B22', zorder=2)
-ax.set_xlim(0, 100)
-ax.set_ylim(0, Y_LIM)
-ax.axis('off')
+    sigma_dots = ax.scatter([], [], s=20, c='gray', alpha=0.65, zorder=14)
+    projection_lines = []
 
-# Dynamic Elements
-bird_marker = [] # Container for the AnnotationBbox
-est_dot, = ax.plot([], [], 'o', color='red', ms=10, mec='white', mew=2, zorder=12, label='UKF Estimate')
-est_line = ax.axvline(0, color='red', ls='--', alpha=0.7, zorder=10, lw=1.2)
+    meas_dot, = ax.plot([], [], 'o', color='blue', ms=9, zorder=19, label='Measurement')
+    meas_proj_line, = ax.plot([], [], 'b--', lw=0.9, alpha=0.55, zorder=10)
 
-# Initialize Simulation State
-true_pos = TRUE_START_X
-true_vel = V_SPEED
+    pred_meas_dot, = ax.plot([], [], 'o', color='magenta', ms=9, zorder=19, label='Predicted Meas')
 
-ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR, 
-          predict_state=bird_predict_state, measure_state=bird_measure_state,
-          alpha=0.1, beta=2.0, kappa=0.0)
-ukf.x = np.array([INITIAL_X, V_SPEED])
-ukf.P = INITIAL_P.copy()
+    innovation_lines = []
 
-uncertainty_fill = ax.axvspan(0, 0, color='red', alpha=0.2)
-def update(frame):
-    global true_pos, true_vel, bird_marker
+    # High zorder + solid background annotation
+    annotation = ax.text(0.03, 0.97, '', transform=ax.transAxes, va='top', ha='left',
+                         fontsize=11, bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.6',
+                                                alpha=0.94), zorder=25)
 
-    # 1. True Bird Movement (Simulate)
-    noise = np.random.normal(0, np.sqrt(Q_VAR))
-    true_pos += true_vel * DT + noise[0]
-    true_vel += noise[1]
-    true_vel = np.clip(true_vel, 0.8, 1.2)
-    
-    # 2. Measurement (now: height + direct velocity)
-    true_height = h(true_pos)
-    true_velocity = true_vel
-    measurement = np.array([true_height, true_velocity]) + \
-                  np.random.multivariate_normal([0, 0], R_VAR)
+    uncertainty_fill = ax.axvspan(0, 0, color='red', alpha=0.16, zorder=5)
 
-    # 3. UKF Update
-    ukf.predict(u=0, zeta=None)
-    ukf.update(measurement)
+    # Initial state
+    true_pos = TRUE_START_X
+    true_vel = V_SPEED
+
+    ukf = UKF(n=STATE_DIM, R=R_VAR, Q_diag=Q_VAR,
+              predict_state=bird_predict_state, measure_state=bird_measure_state,
+              alpha=0.8, beta=2.0, kappa=0.0)
+    ukf.x = np.array([INITIAL_X, V_SPEED])
+    ukf.P = INITIAL_P.copy()
+
+    prior_x = ukf.x.copy()
+    prior_P = ukf.P.copy()
+    predicted_x = ukf.x.copy()
+    predicted_P = ukf.P.copy()
+
     est_pos = ukf.x[0]
-    est_vel = ukf.x[1]
-
-    if frame % 5 == 0:
-        print(
-            f"k={frame:02d}  "
-            f"true_x={true_pos:6.2f}  "
-            f"est_x={est_pos:6.2f}  "
-            f"Pxx={ukf.P[0,0]:7.2f}"
-        )        
-
-    # --- Update Visuals ---
-
-    # Update UKF Marker
     surface_h = h(est_pos)
     est_dot.set_data([est_pos], [surface_h])
-    est_line.set_xdata([est_pos])
-    # Adjust vertical line height
-    est_line.set_ydata([surface_h/Y_LIM, 1.0]) 
-
-    std_dev = np.sqrt(ukf.P[0,0])
-    
-    # Update the "Confidence Cloud"
-    # Show 2 standard deviations (95% confidence)
-    left_bound = est_pos - 2 * std_dev
-    right_bound = est_pos + 2 * std_dev
-    
-    global uncertainty_fill
-    uncertainty_fill.remove() # Clear old fill
-    uncertainty_fill = ax.axvspan(left_bound, right_bound, color='red', alpha=0.15)    
-
-    # Update Bird PNG
-    if bird_marker:
-        bird_marker[0].remove()
-        bird_marker.clear()
+    est_line.set_data([est_pos], [surface_h / Y_LIM, 1.0])
 
     img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
-    img = np.fliplr(img) # Face forward
+    img = np.fliplr(img)
     imagebox = OffsetImage(img, zoom=0.04)
-    # The bird flies at a fixed altitude (e.g., 60)
     ab = AnnotationBbox(imagebox, (true_pos, 60), frameon=False, zorder=30)
     ax.add_artist(ab)
-    bird_marker.append(ab)
+    bird_marker.append(ab)    
 
-    return est_dot, est_line
+    base_text = f"Initial Est: {est_pos:.2f} | Initial True: {true_pos:.2f}"
+    annotation.set_text(base_text)
 
-# Start Animation
-ani = FuncAnimation(fig, update, frames=NUM_STEPS, interval=100, blit=False)
+    sub_steps = 8  # Extra step for Kalman gain visualization
+    _first_call = True
 
-plt.tight_layout(pad=0)
-plt.show()
+
+    def update(frame):
+        global _first_call
+        global true_pos, true_vel, bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill
+        global est_pos, surface_h, current_x, current_P, last_prior_sigma, last_pred_sigma, last_meas_sigma, last_S, last_Pxz, last_innovation, last_K, Wm
+
+        if _first_call:
+            print("Initialization pass (frame=0)")
+            _first_call = False
+            return        
+
+        k = frame // sub_steps
+        sub = frame % sub_steps
+
+        # ── Which estimate is active? ──
+        show_posterior = sub >= 7
+        show_predicted  = 2 <= sub <= 5
+
+        if sub == 0:
+            noise = np.random.normal(0, np.sqrt(Q_VAR))
+            true_pos += true_vel * DT + noise[0]
+            true_vel += noise[1]
+            true_vel = np.clip(true_vel, 0.8, 1.2)
+
+            true_height = h(true_pos)
+            true_velocity = true_vel
+            measurement = np.array([true_height, true_velocity]) + \
+                          np.random.multivariate_normal([0, 0], R_VAR)
+
+            prior_x = ukf.x.copy()
+            prior_P = ukf.P.copy()
+            ukf.predict(u=0, zeta=None)
+            predicted_x = ukf.x.copy()
+            predicted_P = ukf.P.copy()
+            ukf.update(measurement)            
+            est_pos = ukf.x[0]
+            surface_h = h(est_pos)
+            current_x = ukf.x if show_posterior else predicted_x if show_predicted else prior_x
+            current_P = ukf.P if show_posterior else predicted_P if show_predicted else prior_P            
+            last_prior_sigma = ukf.last_prior_sigma
+            last_pred_sigma = ukf.last_pred_sigma
+            last_meas_sigma = ukf.last_meas_sigma
+            last_S = ukf.last_S[0,0]
+            last_Pxz = ukf.last_Pxz[0,0]
+            last_innovation = ukf.last_innovation[0]
+            last_K = ukf.last_K[0,0]
+            Wm = ukf.Wm
+
+
+        # Posterior (red) ─ only moves in last step
+        if show_posterior:
+            est_dot.set_data([est_pos], [surface_h])
+            est_line.set_data([est_pos], [surface_h / Y_LIM, 1.0])
+
+        # Predicted (purple) ─ visible during prediction & innovation
+        if show_predicted:
+            pred_pos = predicted_x[0]
+            pred_h = h(pred_pos)
+            pred_dot.set_data([pred_pos], [pred_h])
+            pred_line.set_data([pred_pos], [pred_h / Y_LIM, 1.0])
+        else:
+            pred_dot.set_data([], [])
+            pred_line.set_data([], [])
+
+        # Uncertainty follows the active estimate
+        current_x = ukf.x if show_posterior else predicted_x if show_predicted else prior_x
+        current_P = ukf.P if show_posterior else predicted_P if show_predicted else prior_P                    
+        std_dev = np.sqrt(current_P[0, 0])
+        left = current_x[0] - 2 * std_dev
+        right = current_x[0] + 2 * std_dev
+        uncertainty_fill.set_xy([
+            [left,   0],
+            [right,  0],
+            [right,  Y_LIM],
+            [left,   Y_LIM],
+            [left,   0]
+        ])
+
+        # ── Sub-step text & sigma ──
+        sigma = None
+        sigma_label = ""
+
+        if sub in [0, 1]:
+            base_text = f"Step {k}: Prior\nEst: {prior_x[0]:.2f} | True: {true_pos:.2f}"
+            if sub == 1:
+                sigma = last_prior_sigma
+                sigma_label = " (prior σ)"
+        elif sub in [2, 3]:
+            base_text = f"Step {k}: Predicted\nEst: {predicted_x[0]:.2f} | True: {true_pos:.2f}"
+            if sub == 2:
+                sigma = last_pred_sigma
+                sigma_label = " (predicted σ)"
+            elif sub == 3:
+                sigma = last_meas_sigma
+                sigma_label = " (meas-mapped σ)"
+        elif sub == 4:
+            base_text = f"Step {k}: S = {last_S:.2f} | Pxz = {last_Pxz:.2f}"
+        elif sub == 5:
+            base_text = f"Step {k}: Innovation = {last_innovation:.2f}"
+        elif sub == 6:  # Kalman Gain / Trust step
+            if hasattr(ukf, 'last_K') and ukf.last_K is not None:
+                gain = last_K
+                trust_pred = 1 - gain
+                base_text = (f"Step {k}: Apply Kalman Gain\n"
+                             f"Gain: {gain:.2f}\n"
+                             f"Trust Pred Meas: {trust_pred:.2f} | Trust Meas: {gain:.2f}")
+            else:
+                base_text = f"Step {k}: Apply Kalman Gain\n(Gain not saved)"
+        elif sub == 7:
+            base_text = f"Step {k}: Posterior\nEst: {est_pos:.2f} | True: {true_pos:.2f}"
+        else:
+            base_text = f"Step {k}: Done"
+
+        annotation.set_text(base_text + sigma_label)
+
+        # ── Sigma points ──
+        for line in projection_lines:
+            line.remove()
+        projection_lines.clear()
+
+        if sigma is not None:
+            sigma_x = sigma[:, 0]
+            sigma_y = np.full_like(sigma_x, 60)
+            abs_w = np.abs(Wm)
+            w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
+            sizes = 30 + 100 * w_norm
+            sigma_dots.set_offsets(np.column_stack((sigma_x, sigma_y)))
+            sigma_dots.set_sizes(sizes)
+            for sx in sigma_x:
+                ln, = ax.plot([sx, sx], [h(sx), 60], 'k--', lw=0.6, alpha=0.3, zorder=8)
+                projection_lines.append(ln)
+        else:
+            sigma_dots.set_offsets(np.empty((0,2)))
+            sigma_dots.set_sizes([])
+
+        # ── Measurement ──
+        if sub >= 4:
+            meas_dot.set_data([true_pos], [h(true_pos)])
+            meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), 60])
+        else:
+            meas_dot.set_data([], [])
+            meas_proj_line.set_data([], [])
+
+        # ── Predicted measurement ──
+        if sub >= 4:
+            pred_h = h(predicted_x[0])
+            pred_meas_dot.set_data([predicted_x[0]], [pred_h])
+        else:
+            pred_meas_dot.set_data([], [])
+
+        # ── Blue & Magenta dot sizes — ONLY in Kalman gain step (sub==6) ──
+        meas_dot.set_markersize(9)
+        pred_meas_dot.set_markersize(9)
+
+        if sub == 6 and hasattr(ukf, 'last_K') and ukf.last_K is not None:
+            gain = last_K
+            trust_meas = gain
+            trust_pred = 1 - gain
+
+            meas_size = 8 + 18 * trust_meas   # up to ~26 when trust=1
+            pred_size = 8 + 18 * trust_pred
+
+            meas_dot.set_markersize(meas_size)
+            pred_meas_dot.set_markersize(pred_size)
+
+        # ── Innovation lines ──
+        for ln in innovation_lines:
+            ln.remove()
+        innovation_lines.clear()
+
+        if sub == 5:
+            pred_h = h(predicted_x[0])
+            meas_h = h(true_pos)
+            y_low  = min(pred_h, meas_h)
+            y_high = max(pred_h, meas_h)
+            mid_x  = (predicted_x[0] + true_pos) / 2
+
+            ln1, = ax.plot([predicted_x[0], true_pos], [pred_h, pred_h], 'purple', lw=1.3, alpha=0.8, zorder=14)
+            ln2, = ax.plot([true_pos, predicted_x[0]], [meas_h, meas_h], 'purple', lw=1.3, alpha=0.8, zorder=14)
+            innovation_lines.extend([ln1, ln2])
+
+            dy = y_high - y_low
+            if dy > 0.01:
+                arrow = ax.arrow(mid_x, y_low, 0, dy, head_width=0.6, width=0.25,
+                                 length_includes_head=True, color='purple', alpha=0.9, zorder=16)
+                arrow_rev = ax.arrow(mid_x, y_high, 0, -dy, head_width=0.6, width=0.25,
+                                     length_includes_head=True, color='purple', alpha=0.9, zorder=16)
+                innovation_lines.extend([arrow, arrow_rev])
+
+        # ── Bird ──
+        if bird_marker:
+            bird_marker[0].remove()
+            bird_marker.clear()
+        img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
+        img = np.fliplr(img)
+        imagebox = OffsetImage(img, zoom=0.04)
+        ab = AnnotationBbox(imagebox, (true_pos, 60), frameon=False, zorder=30)
+        ax.add_artist(ab)
+        bird_marker.append(ab)
+
+        return (est_dot, est_line, pred_dot, pred_line, sigma_dots, meas_dot, meas_proj_line,
+                pred_meas_dot, annotation, *projection_lines, *innovation_lines)
+
+    total_frames = NUM_STEPS * sub_steps
+    ani = FuncAnimation(fig, update, frames=total_frames, interval=4000, blit=False)
+
+    plt.tight_layout(pad=0)
+    plt.show()
