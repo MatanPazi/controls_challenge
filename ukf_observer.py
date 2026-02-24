@@ -142,6 +142,14 @@ class UKF:
         self.m = self.R.shape[0]   # This is your measurement dimension
         self.Q = np.diag(Q_diag)
         self.theta = theta
+        self.last_prior_sigma = None
+        self.last_pred_sigma = None
+        self.last_meas_sigma = None      
+        self.last_z_hat = None
+        self.last_S = None
+        self.last_Pxz = None
+        self.last_innovation = None          
+        self.last_K = None
 
         # Store the user-provided prediction function
         if predict_state is None:
@@ -229,11 +237,12 @@ class UKF:
             Predicted state covariance P_{k|k-1}.
         """        
         X = self.sigma_points(self.x, self.P)
-
+        self.last_prior_sigma = X
         Xp = np.array([
             self.predict_state(X[i], u, zeta, self.theta)
             for i in range(2*self.n + 1)
         ])
+        self.last_pred_sigma = Xp
 
         # Mean
         self.x = np.sum(self.Wm[:, None] * Xp, axis=0)
@@ -265,6 +274,7 @@ class UKF:
             Measurement innovation (y_k - ŷ_k).
         """            
         X = self.sigma_points(self.x, self.P)
+        self.last_meas_sigma = X
 
         # 1. Map sigma points to measurement space
         # Z shape: (2n+1, m)
@@ -273,6 +283,7 @@ class UKF:
         # 2. Predicted measurement mean (weighted sum)
         # z_hat shape: (m,)
         z_hat = np.sum(self.Wm[:, None] * Z, axis=0)
+        self.last_z_hat = z_hat
 
         # 3. Innovation covariance S (m x m)
         # S = sum(Wc * (Z-z_hat)(Z-z_hat)^T) + R
@@ -281,6 +292,7 @@ class UKF:
             dz = Z[i] - z_hat
             S += self.Wc[i] * np.outer(dz, dz)
         S += self.R  # Add measurement noise matrix
+        self.last_S = S
 
         # 4. Cross covariance Pxz (n x m)
         Pxz = np.zeros((self.n, self.m))
@@ -288,14 +300,17 @@ class UKF:
             dx = X[i] - self.x
             dz = Z[i] - z_hat
             Pxz += self.Wc[i] * np.outer(dx, dz)
+        self.last_Pxz = Pxz
 
         # 5. Kalman gain (K = Pxz * inv(S))
         # Use solve for better numerical stability than inv()
         K = np.linalg.solve(S.T, Pxz.T).T
+        self.last_K = K
 
         # 6. Innovation (y - z_hat)
         # Ensure y_meas is a numpy array for vector subtraction
         innovation = np.atleast_1d(y_meas) - z_hat
+        self.last_innovation = innovation
 
         # 7. State update
         self.x = self.x + K @ innovation
@@ -303,6 +318,9 @@ class UKF:
         # 8. Covariance update (Joseph form or standard)
         self.P = self.P - K @ S @ K.T
         self.P = 0.5 * (self.P + self.P.T) + self.jitter * np.eye(self.n)
+        
+        
+        
 
         return innovation
 
