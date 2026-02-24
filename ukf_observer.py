@@ -144,6 +144,7 @@ class UKF:
         self.theta = theta
         self.last_prior_sigma = None
         self.last_pred_sigma = None
+        self.last_pred_sigma_mean = None
         self.last_meas_sigma = None      
         self.last_z_hat = None
         self.last_S = None
@@ -246,6 +247,7 @@ class UKF:
 
         # Mean
         self.x = np.sum(self.Wm[:, None] * Xp, axis=0)
+        self.last_pred_sigma_mean = Xp
 
         # Covariance
         P = self.Q.copy()
