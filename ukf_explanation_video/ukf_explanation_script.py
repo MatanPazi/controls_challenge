@@ -24,14 +24,14 @@ Y_LIM = 75
 # UKF and simulation constants
 STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
-DT = 0.1                # Time step
-Q_VAR = [0.05, 0.001]     # Q_diag for pos and vel noise
+DT = 1                # Time step
+Q_VAR = [0.02, 0.015]     # Q_diag for pos and vel noise
 R_VAR = np.diag([0.02, 0.005]) # Measurement noise variance
-INITIAL_X = 5.0        # start pos
+INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
-INITIAL_P = np.diag([20.0, 0.5])  # separate variances
+INITIAL_P = np.diag([50.0, 0.5])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
-TRUE_START_X = 20.0     # True bird starting position
+TRUE_START_X = 5.0     # True bird starting position
 
 def h(x):
     """
@@ -228,7 +228,6 @@ def update(frame):
     measurement = np.array([true_height, true_velocity]) + \
                   np.random.multivariate_normal([0, 0], R_VAR)
 
-
     # 3. UKF Update
     ukf.predict(u=0, zeta=None)
     ukf.update(measurement)
@@ -252,7 +251,6 @@ def update(frame):
     # Adjust vertical line height
     est_line.set_ydata([surface_h/Y_LIM, 1.0]) 
 
-    est_pos = ukf.x[0]
     std_dev = np.sqrt(ukf.P[0,0])
     
     # Update the "Confidence Cloud"
