@@ -293,6 +293,7 @@ if __name__ == "__main__":
             last_innovation = ukf.last_innovation[0]
             last_K = ukf.last_K[0,0]
             Wm = ukf.Wm
+            last_z_hat = ukf.last_z_hat
 
 
         # Posterior (red) ─ only moves in last step
@@ -332,15 +333,15 @@ if __name__ == "__main__":
             base_text = f"Step {k}: Prior\nEst: {prior_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 1:
                 sigma = last_prior_sigma
-                sigma_label = " (prior σ)"
+                sigma_label = " (prior σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
         elif sub in [2, 3]:
             base_text = f"Step {k}: Predicted\nEst: {predicted_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 2:
                 sigma = last_pred_sigma
-                sigma_label = " (predicted σ)"
+                sigma_label = " (predicted σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
             elif sub == 3:
                 sigma = last_meas_sigma
-                sigma_label = " (meas-mapped σ)"
+                sigma_label = " (meas-mapped σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
         elif sub == 4:
             base_text = f"Step {k}: S = {last_S:.2f} | Pxz = {last_Pxz:.2f}"
         elif sub == 5:
@@ -374,6 +375,10 @@ if __name__ == "__main__":
             sizes = 30 + 100 * w_norm
             sigma_dots.set_offsets(np.column_stack((sigma_x, sigma_y)))
             sigma_dots.set_sizes(sizes)
+            colors = ['gray'] * len(sigma_x)
+            colors[1] = colors[3] = 'orange'           # position axis
+            colors[2] = colors[4] = 'teal'             # velocity axis
+            sigma_dots.set_facecolor(colors)            
             for sx in sigma_x:
                 ln, = ax.plot([sx, sx], [h(sx), 60], 'k--', lw=0.6, alpha=0.3, zorder=8)
                 projection_lines.append(ln)
@@ -391,8 +396,8 @@ if __name__ == "__main__":
 
         # ── Predicted measurement ──
         if sub >= 4:
-            pred_h = h(predicted_x[0])
-            pred_meas_dot.set_data([predicted_x[0]], [pred_h])
+            pred_h = ukf.last_z_hat[0] if hasattr(ukf, 'last_z_hat') else h(predicted_x[0])
+            pred_meas_dot.set_data([predicted_x[0]], [pred_h])   # x = predicted pos, y = z_hat[0]
         else:
             pred_meas_dot.set_data([], [])
 
