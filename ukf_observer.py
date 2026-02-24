@@ -46,13 +46,6 @@ beta  = 0.0         # For Gaussian, optimal = 2
 kappa = 0.0         # Secondary scaling
 
 # ──────────────────────────────────────────────
-# Load fitted theta
-# ──────────────────────────────────────────────
-
-theta = np.load(THETA_FILE)
-print(f"Loaded theta from {THETA_FILE} — shape: {theta.shape}")
-
-# ──────────────────────────────────────────────
 # Helper: predict next state (deterministic part of your model)
 # ──────────────────────────────────────────────
 
