@@ -26,7 +26,7 @@ STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
 DT = 1                # Time step
 Q_VAR = [0.02, 0.015]     # Q_diag for pos and vel noise
-R_VAR = np.diag([0.02, 0.01]) # Measurement noise variance
+R_VAR = np.diag([0.02, 0.1]) # Measurement noise variance
 INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
 INITIAL_P = np.diag([60.0, 0.5])  # separate variances
@@ -234,6 +234,10 @@ if __name__ == "__main__":
     est_dot.set_data([est_pos], [surface_h])
     est_line.set_data([est_pos], [surface_h / Y_LIM, 1.0])
 
+    # Initialize active state for manual stepping
+    current_x = ukf.x.copy()
+    current_P = ukf.P.copy()    
+
     img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
     img = np.fliplr(img)
     imagebox = OffsetImage(img, zoom=0.03)
@@ -245,18 +249,18 @@ if __name__ == "__main__":
     annotation.set_text(base_text)
 
     sub_steps = 8  # Extra step for Kalman gain visualization
-    _first_call = True
-
+    # _first_call = True
+    current_frame = 0
 
     def update(frame):
-        global _first_call
+        # global _first_call
         global true_pos, true_vel, bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill, measurement
         global est_pos, surface_h, current_x, current_P
 
-        if _first_call:
-            print("Initialization pass (frame=0)")
-            _first_call = False
-            return        
+        # if _first_call:
+        #     print("Initialization pass (frame=0)")
+        #     _first_call = False
+        #     return        
 
         k = frame // sub_steps
         sub = frame % sub_steps
@@ -323,15 +327,15 @@ if __name__ == "__main__":
             base_text = f"Step {k}: Prior\nEst: {prior_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 1:
                 sigma = ukf.last_prior_sigma
-                sigma_label = " (prior σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
+                sigma_label = " (prior σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
         elif sub in [2, 3]:
             base_text = f"Step {k}: Predicted\nEst: {predicted_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 2:
                 sigma = ukf.last_pred_sigma
-                sigma_label = " (predicted σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
+                sigma_label = " (predicted σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
             elif sub == 3:
                 sigma = ukf.last_meas_sigma
-                sigma_label = " (meas-mapped σ)\n(σ points: orange = pos uncertainty, teal = vel uncertainty, grey = mean)"
+                sigma_label = " (meas-mapped σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
         elif sub == 4:
             base_text = (
                 f"Step {k}: S = {ukf.last_S[0,0]:.2f} | Pxz = {ukf.last_Pxz[0,0]:.2f}"
@@ -487,7 +491,25 @@ if __name__ == "__main__":
                 pred_meas_dot, annotation, *projection_lines, *innovation_lines)
 
     total_frames = NUM_STEPS * sub_steps
-    ani = FuncAnimation(fig, update, frames=total_frames, interval=20, blit=False)
+    # ani = FuncAnimation(fig, update, frames=total_frames, interval=200, blit=False)
+
+    # Advance animation via spacebar
+    def on_key(event):
+        global current_frame
+        if event.key == ' ':
+            update(current_frame)
+            fig.canvas.draw_idle()
+            current_frame += 1
+    fig.canvas.mpl_connect('key_press_event', on_key)
+
+    ## If I want to advance animation via mouse click
+    # def on_click(event):
+    #     global current_frame
+    #     update(current_frame)
+    #     fig.canvas.draw_idle()
+    #     current_frame += 1
+
+    # fig.canvas.mpl_connect('button_press_event', on_click)    
 
     plt.tight_layout(pad=0)
     plt.show()
