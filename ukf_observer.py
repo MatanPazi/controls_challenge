@@ -245,10 +245,10 @@ class UKF:
             for i in range(2*self.n + 1)
         ])
         self.last_pred_sigma = Xp
+        self.last_pred_sigma_mean = Xp
 
         # Mean
         self.x = np.sum(self.Wm[:, None] * Xp, axis=0)
-        self.last_pred_sigma_mean = Xp
 
         # Covariance
         P = self.Q.copy()
@@ -317,7 +317,9 @@ class UKF:
         self.last_innovation = innovation
 
         # 7. State update
+        debug1 = K @ innovation
         self.x = self.x + K @ innovation
+        
 
         # 8. Covariance update (Joseph form or standard)
         self.P = self.P - K @ S @ K.T
