@@ -584,20 +584,11 @@ if __name__ == "__main__":
     plt.show()
 
 
-    # TODO: Make the sigma points' contribution more apparent, right now they seem redundant...
-# Quick ways to make their contribution more visiblePlot the measurement-mapped points (Z) instead
-# During sub-step 3 (meas-mapped σ):python
-
-# if sub == 3:
-#     Z = np.array([bird_measure_state(sig) for sig in sigma])  # compute Z
-#     z_x = Z[:,0]  # predicted heights
-#     z_y = np.full_like(z_x, 60)  # or plot in separate inset
-#     # Then scatter Z[:,0] at some x offset or in a subplot
-
-# → You'd see how the Z points are spread differently due to nonlinear h(pos), and some are closer to actual y_meas.
-# Highlight points close to measurement
-# Color Z points by distance to y_meas:python
-
-# dists = np.linalg.norm(Z - y_meas, axis=1)
-# colors = plt.cm.viridis(1 - dists / dists.max())  # closer = brighter
-
+# TODO: 
+# 1. Put a semi transparent bird above the estimated position.
+# 2. Always put a dashed line beneath the true bird and show measurement dot.
+# 3. Estimator should work before the bird starts moving. The initial motion of the bird is unnecessary.
+# 4. The initial sigma point shouldn't land on the actual bird.
+# 5. Use the phrases predictor corrector phrasing.
+# General notes:
+# There's a non linear unknown function between the position and height.
