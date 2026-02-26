@@ -151,6 +151,7 @@ class UKF:
         self.last_Pxz = None
         self.last_innovation = None          
         self.last_K = None
+        self.last_Z = None
 
         # Store the user-provided prediction function
         if predict_state is None:
@@ -281,6 +282,7 @@ class UKF:
         # 1. Map sigma points to measurement space
         # Z shape: (2n+1, m)
         Z = np.array([self.measure_state(sig, self.theta) for sig in X])
+        self.last_Z = Z  # ← add this to save Z
         
         # 2. Predicted measurement mean (weighted sum)
         # z_hat shape: (m,)
