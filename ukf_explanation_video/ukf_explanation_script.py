@@ -283,12 +283,17 @@ if __name__ == "__main__":
         #     _first_call = False
         #     return        
 
+        # ── Clear Innovation lines ──
+        for ln in innovation_lines:
+            ln.remove()
+        innovation_lines.clear()
+
         k = frame // sub_steps
         sub = frame % sub_steps
 
         # ── Which estimate is active? ──
         show_posterior = sub >= 7
-        show_predicted  = 2 <= sub <= 5
+        show_predicted  = 2 <= sub <= 7
 
         if sub == 0:
             noise = np.random.normal(0, np.sqrt(Q_VAR))
@@ -379,21 +384,18 @@ if __name__ == "__main__":
             else:
                 base_text = f"Step {k}: Apply Kalman Gain\n(Gain not saved)"
         elif sub == 7:
-            dx_motion = predicted_x[0] - prior_x[0]
-            dx_corr   = ukf.last_K[0, :] @ ukf.last_innovation
-            dx_total  = dx_motion + dx_corr
+            dx_corr = ukf.last_K @ ukf.last_innovation
 
             base_text = (
                 rf"Step {k}: Posterior"
                 "\n"
                 r"$x_{\mathrm{post}}"
-                r" = x_{\mathrm{prior}}"
-                r" + (x_{\mathrm{pred}} - x_{\mathrm{prior}})"
+                r" = x_{\mathrm{pred}}"
                 r" + K\,(y_{\mathrm{meas}} - \hat z_{\mathrm{pred\ meas}})$"
                 "\n"
                 rf"$x_{{\mathrm{{post}}}}"
-                rf" = {prior_x[0]:.2f}"
-                rf" + ({dx_total:+.2f})"
+                rf" = {predicted_x[0]:.2f}"
+                rf" + ({dx_corr[0]:+.2f})"
                 rf" = {est_pos:.2f}$"
             )
         else:
@@ -529,29 +531,7 @@ if __name__ == "__main__":
             pred_size = 8 + 18 * trust_pred
 
             meas_dot.set_markersize(meas_size)
-            pred_meas_dot.set_markersize(pred_size)
-            # print(
-            #     f"\n--- UKF STEP {k} ---\n"
-            #     f"x_prior        = {prior_x[0]: .4f}\n"
-            #     f"x_pred         = {predicted_x[0]: .4f}\n"
-            #     f"x_post         = {ukf.x[0]: .4f}\n"
-            #     f"\n"
-            #     f"z_meas (y)     = {measurement[0]: .4f}\n"
-            #     f"z_hat          = {last_z_hat[0]: .4f}\n"
-            #     f"innovation     = {last_innovation: .4f}\n"
-            #     f"\n"
-            #     f"P_xx           = {prior_P[0,0]: .4f}\n"
-            #     f"P_xz           = {last_Pxz: .4f}\n"
-            #     f"S              = {last_S: .4f}\n"
-            #     f"K_x            = {last_K: .4f}\n"
-            #     f"\n"
-            #     f"Δx = K·innov   = {(last_K * last_innovation): .4f}\n"
-            # )        
-
-        # ── Innovation lines ──
-        for ln in innovation_lines:
-            ln.remove()
-        innovation_lines.clear()
+            pred_meas_dot.set_markersize(pred_size)      
 
         if sub == 5:
             pred_h = ukf.last_z_hat[0]
