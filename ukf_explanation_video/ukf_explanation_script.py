@@ -409,36 +409,39 @@ if __name__ == "__main__":
         projection_lines.clear()
 
         if sigma is not None:
-            sigma_x = sigma[:, 0]
-            sigma_y = np.full_like(sigma_x, BIRD_HEIGHT)
+            # Mask: keep only center + position sigmas (indices 0,1,2)
+            mask = [True, True, False, True, False]  # exclude velocity ±
+            sigma_x_masked = sigma[mask, 0]
+            sigma_y_masked = np.full_like(sigma_x_masked, BIRD_HEIGHT)
 
             # Always compute state-space sizes & colors (consistent logic)
             abs_w = np.abs(ukf.Wm)
             w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
             sizes = 30 + 100 * w_norm
-            colors = ['gray'] * len(sigma_x)
-            colors[1] = colors[3] = 'orange'   # position axis
-            colors[2] = colors[4] = 'teal'     # velocity axis            
+            colors_masked  = ['gray'] * len(sigma_x_masked)
+            colors_masked[1] = colors_masked[2] = 'orange'   # position axis
+            sigma_dots.set_sizes(sizes)
+            sigma_dots.set_facecolor(colors_masked)            
+
             if sub == 3 and hasattr(ukf, 'last_Z') and ukf.last_Z is not None:
                 # Switch to measurement space (ruler mode)
                 Z = ukf.last_Z
                 z_heights = Z[:,0]  # height component
-                ruler_x = np.full_like(z_heights, MEAS_RULER_X)
+                z_heights_masked = z_heights[mask]
+                ruler_x = np.full_like(z_heights_masked, MEAS_RULER_X)
 
-                sigma_dots.set_offsets(np.column_stack((ruler_x, z_heights)))
-                sigma_dots.set_sizes(sizes)
-                sigma_dots.set_facecolor(colors)
+                sigma_dots.set_offsets(np.column_stack((ruler_x, z_heights_masked)))
 
                 # Horizontal dashed lines: from ruler Z height back to original sigma x
-                for i in range(len(sigma_x)):
-                    z_h = z_heights[i]
-                    ln, = ax.plot([sigma_x[0], MEAS_RULER_X], [z_h, z_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
+                for i in range(len(sigma_x_masked)):
+                    z_h = z_heights_masked[i]
+                    ln, = ax.plot([sigma_x_masked[i], MEAS_RULER_X], [z_h, z_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
                     projection_lines.append(ln)
 
                 # Show z_hat on the ruler
                 z_hat_h = ukf.last_z_hat[0]
                 ruler_zhat_dot.set_data([MEAS_RULER_X], [z_hat_h])
-                ln, = ax.plot([sigma_x[0], MEAS_RULER_X], [z_hat_h, z_hat_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
+                ln, = ax.plot([sigma_x_masked[0], MEAS_RULER_X], [z_hat_h, z_hat_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
                 projection_lines.append(ln)
 
                 # S band
@@ -464,19 +467,9 @@ if __name__ == "__main__":
 
             else:
                 # Normal state-space sigma mode
-                sigma_x = sigma[:, 0]
-                sigma_y = np.full_like(sigma_x, BIRD_HEIGHT)
-                abs_w = np.abs(ukf.Wm)
-                w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
-                sizes = 30 + 100 * w_norm
-                sigma_dots.set_offsets(np.column_stack((sigma_x, sigma_y)))
-                sigma_dots.set_sizes(sizes)
-                colors = ['gray'] * len(sigma_x)
-                colors[1] = colors[3] = 'orange'   # position axis
-                colors[2] = colors[4] = 'teal'     # velocity axis
-                sigma_dots.set_facecolor(colors)
+                sigma_dots.set_offsets(np.column_stack((sigma_x_masked, sigma_y_masked)))
 
-                for sx in sigma_x:
+                for sx in sigma_x_masked:
                     ln, = ax.plot([sx, sx], [h(sx), BIRD_HEIGHT], 'k--', lw=0.6, alpha=0.3, zorder=8)
                     projection_lines.append(ln)
 
