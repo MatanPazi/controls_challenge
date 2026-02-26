@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Rectangle
 from scipy.stats import norm  # For Gaussian PDF plotting
 import sys
 import os
@@ -33,6 +34,8 @@ INITIAL_P = np.diag([60.0, 0.5])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
 TRUE_START_X = 5.0     # True bird starting position
 BIRD_HEIGHT = 55
+MEAS_RULER_X = 50       # fixed x for measurement space ruler
+
 
 def h(x):
     """
@@ -207,6 +210,23 @@ if __name__ == "__main__":
 
     innovation_lines = []
 
+    # Measurement space ruler (vertical line + labels)
+    ruler_line, = ax.plot([], [], 'k--', lw=0.5, alpha=0.6, zorder=10, label='Meas Space')
+    ruler_sigma = ax.scatter([], [], s=15, c='gray', alpha=0.6, zorder=14, label='Z σ points')
+    ruler_zhat_dot, = ax.plot([], [], 'kx', ms=8, mec='black', mew=1, zorder=19, label='ẑ')
+    # Measurement uncertainty error bar
+    ruler_s_err = ax.errorbar(
+        [], [], yerr=[],
+        fmt='none',
+        ecolor='purple',
+        elinewidth=2.0,
+        capsize=6,
+        alpha=0.6,
+        zorder=11
+    )
+
+    ruler_label = ax.text(MEAS_RULER_X + 0.5, Y_LIM - 5, '', fontsize=8, ha='left', va='top', color='gray', alpha=0.8, zorder=25)    
+
     # High zorder + solid background annotation
     annotation = ax.text(0.03, 0.97, '', transform=ax.transAxes, va='top', ha='left',
                          fontsize=11, bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.6',
@@ -256,6 +276,7 @@ if __name__ == "__main__":
         # global _first_call
         global true_pos, true_vel, bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill, measurement
         global est_pos, surface_h, current_x, current_P
+        global ruler_s_err
 
         # if _first_call:
         #     print("Initialization pass (frame=0)")
@@ -380,7 +401,7 @@ if __name__ == "__main__":
 
         annotation.set_text(base_text + sigma_label)
 
-        # ── Sigma points ──
+        # ── Sigma points & Measurement ruler ──
         for line in projection_lines:
             line.remove()
         projection_lines.clear()
@@ -388,21 +409,96 @@ if __name__ == "__main__":
         if sigma is not None:
             sigma_x = sigma[:, 0]
             sigma_y = np.full_like(sigma_x, BIRD_HEIGHT)
+
+            # Always compute state-space sizes & colors (consistent logic)
             abs_w = np.abs(ukf.Wm)
             w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
             sizes = 30 + 100 * w_norm
-            sigma_dots.set_offsets(np.column_stack((sigma_x, sigma_y)))
-            sigma_dots.set_sizes(sizes)
             colors = ['gray'] * len(sigma_x)
-            colors[1] = colors[3] = 'orange'           # position axis
-            colors[2] = colors[4] = 'teal'             # velocity axis
-            sigma_dots.set_facecolor(colors)            
-            for sx in sigma_x:
-                ln, = ax.plot([sx, sx], [h(sx), BIRD_HEIGHT], 'k--', lw=0.6, alpha=0.3, zorder=8)
+            colors[1] = colors[3] = 'orange'   # position axis
+            colors[2] = colors[4] = 'teal'     # velocity axis            
+            if sub == 3 and hasattr(ukf, 'last_Z') and ukf.last_Z is not None:
+                # Switch to measurement space (ruler mode)
+                Z = ukf.last_Z
+                z_heights = Z[:,0]  # height component
+                ruler_x = np.full_like(z_heights, MEAS_RULER_X)
+
+                sigma_dots.set_offsets(np.column_stack((ruler_x, z_heights)))
+                sigma_dots.set_sizes(sizes)
+                sigma_dots.set_facecolor(colors)
+
+                # Horizontal dashed lines: from ruler Z height back to original sigma x
+                for i in range(len(sigma_x)):
+                    z_h = z_heights[i]
+                    ln, = ax.plot([sigma_x[0], MEAS_RULER_X], [z_h, z_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
+                    projection_lines.append(ln)
+
+                # Show z_hat on the ruler
+                z_hat_h = ukf.last_z_hat[0]
+                ruler_zhat_dot.set_data([MEAS_RULER_X], [z_hat_h])
+                ln, = ax.plot([sigma_x[0], MEAS_RULER_X], [z_hat_h, z_hat_h], 'k--', lw=0.6, alpha=0.3, zorder=8)
                 projection_lines.append(ln)
+
+                # S band
+                std_S = np.sqrt(ukf.last_S[0, 0])
+                # Remove old error bar artists
+                ruler_s_err.remove()
+
+                # Draw new error bar
+                ruler_s_err = ax.errorbar(
+                    [MEAS_RULER_X], [z_hat_h],
+                    yerr=2 * std_S,
+                    fmt='none',
+                    ecolor='purple',
+                    elinewidth=2.0,
+                    capsize=6,
+                    alpha=0.6,
+                    zorder=11
+                )
+
+                # Ruler line & label
+                ruler_line.set_data([MEAS_RULER_X, MEAS_RULER_X], [0, Y_LIM])
+                ruler_label.set_text('Meas Space\n(Heights)')
+
+            else:
+                # Normal state-space sigma mode
+                sigma_x = sigma[:, 0]
+                sigma_y = np.full_like(sigma_x, BIRD_HEIGHT)
+                abs_w = np.abs(ukf.Wm)
+                w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
+                sizes = 30 + 100 * w_norm
+                sigma_dots.set_offsets(np.column_stack((sigma_x, sigma_y)))
+                sigma_dots.set_sizes(sizes)
+                colors = ['gray'] * len(sigma_x)
+                colors[1] = colors[3] = 'orange'   # position axis
+                colors[2] = colors[4] = 'teal'     # velocity axis
+                sigma_dots.set_facecolor(colors)
+
+                for sx in sigma_x:
+                    ln, = ax.plot([sx, sx], [h(sx), BIRD_HEIGHT], 'k--', lw=0.6, alpha=0.3, zorder=8)
+                    projection_lines.append(ln)
+
+                # Hide ruler elements when in state mode
+                ruler_sigma.set_offsets(np.empty((0,2)))
+                ruler_sigma.set_sizes([])
+                ruler_sigma.set_facecolor('none')
+                ruler_zhat_dot.set_data([], [])
+                ruler_line.set_data([], [])
+                ruler_s_err.remove()
+                ruler_s_err = ax.errorbar([], [], yerr=[], fmt='none')                
+                ruler_label.set_text('')
+
         else:
             sigma_dots.set_offsets(np.empty((0,2)))
             sigma_dots.set_sizes([])
+            ruler_sigma.set_offsets(np.empty((0,2)))
+            ruler_sigma.set_sizes([])
+            ruler_sigma.set_facecolor('none')
+            ruler_zhat_dot.set_data([], [])
+            ruler_line.set_data([], [])
+            ruler_s_err.remove()
+            ruler_s_err = ax.errorbar([], [], yerr=[], fmt='none')            
+            ruler_label.set_text('')
 
         # ── Measurement ──
         if sub >= 4:
@@ -513,3 +609,22 @@ if __name__ == "__main__":
 
     plt.tight_layout(pad=0)
     plt.show()
+
+
+    # TODO: Make the sigma points' contribution more apparent, right now they seem redundant...
+# Quick ways to make their contribution more visiblePlot the measurement-mapped points (Z) instead
+# During sub-step 3 (meas-mapped σ):python
+
+# if sub == 3:
+#     Z = np.array([bird_measure_state(sig) for sig in sigma])  # compute Z
+#     z_x = Z[:,0]  # predicted heights
+#     z_y = np.full_like(z_x, 60)  # or plot in separate inset
+#     # Then scatter Z[:,0] at some x offset or in a subplot
+
+# → You'd see how the Z points are spread differently due to nonlinear h(pos), and some are closer to actual y_meas.
+# Highlight points close to measurement
+# Color Z points by distance to y_meas:python
+
+# dists = np.linalg.norm(Z - y_meas, axis=1)
+# colors = plt.cm.viridis(1 - dists / dists.max())  # closer = brighter
+
