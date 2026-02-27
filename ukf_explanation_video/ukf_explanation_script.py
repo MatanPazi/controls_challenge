@@ -32,7 +32,7 @@ INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
 INITIAL_P = np.diag([60.0, 0.5])  # separate variances
 NUM_STEPS = 80          # Simulation steps (to cross terrain)
-TRUE_START_X = 5.0     # True bird starting position
+TRUE_START_X = 10.0     # True bird starting position
 BIRD_HEIGHT = 55
 MEAS_RULER_X = 50       # fixed x for measurement space ruler
 
@@ -145,36 +145,6 @@ def bird_measure_state(x, theta=None):
     return np.array([height, velocity])
 
 
-def add_png_bird(ax, png_file, x_pct=0.20, y_pct=0.80, zoom=0.12, flip=True, zorder=30):
-    """
-    Draw a PNG image (your bird) on the axes at a percentage position.
-    flip=True mirrors the PNG horizontally so it faces left.
-    zoom controls its size.
-    """
-    img = plt.imread(png_file)
-
-    # Flip horizontally if requested
-    if flip:
-        img = np.fliplr(img)
-
-    imagebox = OffsetImage(img, zoom=zoom, zorder=zorder)
-
-    # AnnotationBbox takes (x, y) in DATA coordinates, so convert percentage → data
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-
-    x_data = x0 + x_pct * (x1 - x0)
-    y_data = y0 + y_pct * (y1 - y0)
-
-    ab = AnnotationBbox(
-        imagebox,
-        (x_data, y_data),
-        frameon=False,
-        bboxprops=None,
-        zorder=zorder
-    )
-    ax.add_artist(ab)
-
 if __name__ == "__main__":
 
     # Precompute terrain
@@ -194,13 +164,14 @@ if __name__ == "__main__":
 
     # ── Artists ──
     bird_marker = []
+    est_bird_marker = []
     est_dot, = ax.plot([], [], 'o', color='red', ms=10, mec='white', mew=2, zorder=18, label='Posterior Estimate')
-    est_line = ax.axvline(0, color='red', ls='--', alpha=0.85, zorder=17, lw=1.5)
+    est_line, = ax.plot([], [], '--', color = 'red', lw=1.5, alpha=0.85, zorder=10)
 
     pred_dot, = ax.plot([], [], 'o', color='purple', ms=9, mec='white', mew=1.5, zorder=16, label='Predicted Estimate')
     pred_line = ax.axvline(0, color='purple', ls=':', alpha=0.7, zorder=15, lw=1.2)
 
-    sigma_dots = ax.scatter([], [], s=20, c='gray', alpha=0.65, zorder=14)
+    sigma_dots = ax.scatter([], [], s=20, c='green', alpha=0.65, zorder=14)
     projection_lines = []
 
     meas_dot, = ax.plot([], [], 'o', color='blue', ms=9, zorder=19, label='Measurement')
@@ -252,20 +223,35 @@ if __name__ == "__main__":
     est_pos = ukf.x[0]
     surface_h = h(est_pos)
     est_dot.set_data([est_pos], [surface_h])
-    est_line.set_data([est_pos], [surface_h / Y_LIM, 1.0])
+    debug = surface_h / Y_LIM
+    est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])
 
     # Initialize active state for manual stepping
     current_x = ukf.x.copy()
     current_P = ukf.P.copy()    
 
     img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
-    img = np.fliplr(img)
-    imagebox = OffsetImage(img, zoom=0.03)
+    imagebox = OffsetImage(img, zoom=0.05)
     ab = AnnotationBbox(imagebox, (true_pos, BIRD_HEIGHT), frameon=False, zorder=30)
     ax.add_artist(ab)
     bird_marker.append(ab)    
 
-    base_text = f"Initial Est: {est_pos:.2f} | Initial True: {true_pos:.2f}"
+    est_img = img.copy()
+    est_img[..., 3] *= 0.2
+
+    est_imagebox = OffsetImage(est_img, zoom=0.05)
+    est_ab = AnnotationBbox(est_imagebox,
+                            (est_pos, BIRD_HEIGHT),
+                            frameon=False,
+                            zorder=30)
+
+    ax.add_artist(est_ab)
+    est_bird_marker.append(est_ab)
+
+    meas_dot.set_data([true_pos], [h(true_pos)])
+    meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), BIRD_HEIGHT])    
+
+    base_text = f"Commence UKF"
     annotation.set_text(base_text)
 
     sub_steps = 8  # Extra step for Kalman gain visualization
@@ -274,7 +260,7 @@ if __name__ == "__main__":
 
     def update(frame):
         # global _first_call
-        global true_pos, true_vel, bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill, measurement
+        global true_pos, true_vel, bird_marker, est_bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill, measurement
         global est_pos, surface_h, current_x, current_P
         global ruler_s_err
 
@@ -296,14 +282,8 @@ if __name__ == "__main__":
         show_predicted  = 2 <= sub <= 7
 
         if sub == 0:
-            noise = np.random.normal(0, np.sqrt(Q_VAR))
-            true_pos += true_vel * DT + noise[0]
-            true_vel += noise[1]
-            true_vel = np.clip(true_vel, 0.8, 1.2)
-
             true_height = h(true_pos)
-            true_velocity = true_vel
-            measurement = np.array([true_height, true_velocity]) + \
+            measurement = np.array([true_height, true_vel]) + \
                           np.random.multivariate_normal([0, 0], R_VAR)
 
             prior_x = ukf.x.copy()
@@ -320,7 +300,21 @@ if __name__ == "__main__":
         # Posterior (red) ─ only moves in last step
         if show_posterior:
             est_dot.set_data([est_pos], [surface_h])
-            est_line.set_data([est_pos], [surface_h / Y_LIM, 1.0])
+            est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])
+            if est_bird_marker:
+                est_bird_marker[0].remove()
+                est_bird_marker.clear()
+            img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
+            est_img = img.copy()
+            est_img[..., 3] *= 0.2
+
+            est_imagebox = OffsetImage(est_img, zoom=0.05)
+            est_ab = AnnotationBbox(est_imagebox,
+                                    (est_pos, BIRD_HEIGHT),
+                                    frameon=False,
+                                    zorder=30)
+            ax.add_artist(est_ab)
+            est_bird_marker.append(est_ab)            
 
         # Predicted (purple) ─ visible during prediction & innovation
         if show_predicted:
@@ -418,7 +412,7 @@ if __name__ == "__main__":
             abs_w = np.abs(ukf.Wm)
             w_norm = (abs_w - abs_w.min()) / (abs_w.max() - abs_w.min() + 1e-8)
             sizes = 30 + 100 * w_norm
-            colors_masked  = ['gray'] * len(sigma_x_masked)
+            colors_masked  = ['green'] * len(sigma_x_masked)
             colors_masked[1] = colors_masked[2] = 'orange'   # position axis
             sigma_dots.set_sizes(sizes)
             sigma_dots.set_facecolor(colors_masked)            
@@ -496,12 +490,12 @@ if __name__ == "__main__":
             ruler_label.set_text('')
 
         # ── Measurement ──
-        if sub >= 4:
-            meas_dot.set_data([true_pos], [h(true_pos)])
-            meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), BIRD_HEIGHT])
-        else:
-            meas_dot.set_data([], [])
-            meas_proj_line.set_data([], [])
+        # if sub >= 4:
+        meas_dot.set_data([true_pos], [h(true_pos)])
+        meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), BIRD_HEIGHT])
+        # else:
+        #     meas_dot.set_data([], [])
+        #     meas_proj_line.set_data([], [])
 
         # ── Predicted measurement ──
         if sub >= 4:
@@ -550,11 +544,16 @@ if __name__ == "__main__":
             bird_marker[0].remove()
             bird_marker.clear()
         img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
-        img = np.fliplr(img)
-        imagebox = OffsetImage(img, zoom=0.03)
+        imagebox = OffsetImage(img, zoom=0.05)
         ab = AnnotationBbox(imagebox, (true_pos, BIRD_HEIGHT), frameon=False, zorder=30)
         ax.add_artist(ab)
-        bird_marker.append(ab)
+        bird_marker.append(ab)   
+
+        if sub == 7:
+            noise = np.random.normal(0, np.sqrt(Q_VAR))
+            true_pos += true_vel * DT + noise[0]
+            true_vel += noise[1]
+            true_vel = np.clip(true_vel, 0.8, 1.2)            
 
         return (est_dot, est_line, pred_dot, pred_line, sigma_dots, meas_dot, meas_proj_line,
                 pred_meas_dot, annotation, *projection_lines, *innovation_lines)
@@ -585,10 +584,4 @@ if __name__ == "__main__":
 
 
 # TODO: 
-# 1. Put a semi transparent bird above the estimated position.
-# 2. Always put a dashed line beneath the true bird and show measurement dot.
-# 3. Estimator should work before the bird starts moving. The initial motion of the bird is unnecessary.
-# 4. The initial sigma point shouldn't land on the actual bird.
 # 5. Use the phrases predictor corrector phrasing.
-# General notes:
-# There's a non linear unknown function between the position and height.
