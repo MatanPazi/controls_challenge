@@ -27,7 +27,7 @@ STATE_DIM = 2           # [position, velocity]
 V_SPEED = 1.0           # Constant speed (units per step)
 DT = 1                # Time step
 Q_VAR = [0.02, 0.015]     # Q_diag for pos and vel noise
-R_VAR = np.diag([0.02, 0.1]) # Measurement noise variance
+R_VAR = np.diag([2, 0.1]) # Measurement noise variance
 INITIAL_X = 15.0        # start pos
 V_SPEED = 1.0           # nominal vel
 INITIAL_P = np.diag([60.0, 0.5])  # separate variances
@@ -50,14 +50,6 @@ def h(x):
     y_surface = np.maximum(y_hills, WATER_HEIGHT)
 
     return float(y_surface[0]) if was_scalar else y_surface
-
-def dhdx(x, eps=1e-2):
-    """
-    Numerical derivative of terrain height wrt x.
-    Measures local observability strength.
-    """
-    return (h(x + eps) - h(x - eps)) / (2 * eps)    
-
 
 def generate_terrain(x):
     """
@@ -220,15 +212,8 @@ if __name__ == "__main__":
     predicted_x = ukf.x.copy()
     predicted_P = ukf.P.copy()
 
-    est_pos = ukf.x[0]
-    surface_h = h(est_pos)
-    est_dot.set_data([est_pos], [surface_h])
-    debug = surface_h / Y_LIM
-    est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])
-
     # Initialize active state for manual stepping
     current_x = ukf.x.copy()
-    current_P = ukf.P.copy()    
 
     img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
     imagebox = OffsetImage(img, zoom=0.05)
@@ -236,32 +221,17 @@ if __name__ == "__main__":
     ax.add_artist(ab)
     bird_marker.append(ab)    
 
-    est_img = img.copy()
-    est_img[..., 3] *= 0.2
-
-    est_imagebox = OffsetImage(est_img, zoom=0.05)
-    est_ab = AnnotationBbox(est_imagebox,
-                            (est_pos, BIRD_HEIGHT),
-                            frameon=False,
-                            zorder=30)
-
-    ax.add_artist(est_ab)
-    est_bird_marker.append(est_ab)
-
-    meas_dot.set_data([true_pos], [h(true_pos)])
-    meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), BIRD_HEIGHT])    
-
     base_text = f"Commence UKF"
     annotation.set_text(base_text)
 
-    sub_steps = 8  # Extra step for Kalman gain visualization
-    # _first_call = True
-    current_frame = 0
+    sub_steps = 9  # Extra step for Kalman gain visualization
+    _first_call = True
+    current_frame = 0  
 
     def update(frame):
-        # global _first_call
+        global _first_call
         global true_pos, true_vel, bird_marker, est_bird_marker, prior_x, prior_P, predicted_x, predicted_P, uncertainty_fill, measurement
-        global est_pos, surface_h, current_x, current_P
+        global est_pos, surface_h, current_x
         global ruler_s_err
 
         # if _first_call:
@@ -277,14 +247,50 @@ if __name__ == "__main__":
         k = frame // sub_steps
         sub = frame % sub_steps
 
-        # ── Which estimate is active? ──
-        show_posterior = sub >= 7
-        show_predicted  = 2 <= sub <= 7
+        show_predicted  = 2 <= sub <= 6
 
         if sub == 0:
-            true_height = h(true_pos)
-            measurement = np.array([true_height, true_vel]) + \
-                          np.random.multivariate_normal([0, 0], R_VAR)
+            if _first_call:
+                true_height = h(true_pos)
+                measurement = np.array([true_height, true_vel]) + \
+                            np.random.multivariate_normal([0, 0], R_VAR)                                   
+                
+                # ── Measurement ──
+                meas_dot.set_data([true_pos], [measurement[0]])
+                meas_proj_line.set_data([true_pos, true_pos], [measurement[0], BIRD_HEIGHT])                                       
+
+                # ── Estimate ──
+                est_pos = ukf.x[0]
+                surface_h = h(est_pos)
+                est_dot.set_data([est_pos], [surface_h])
+                est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])            
+
+                if est_bird_marker:
+                    est_bird_marker[0].remove()
+                    est_bird_marker.clear()            
+                img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
+                est_img = img.copy()
+                est_img[..., 3] *= 0.2
+
+                est_imagebox = OffsetImage(est_img, zoom=0.05)
+                est_ab = AnnotationBbox(est_imagebox,
+                                        (est_pos, BIRD_HEIGHT),
+                                        frameon=False,
+                                        zorder=30)
+                ax.add_artist(est_ab)
+                est_bird_marker.append(est_ab)              
+                _first_call = False 
+
+                std_dev = np.sqrt(ukf.P[0, 0])
+                left = current_x[0] - 2 * std_dev
+                right = current_x[0] + 2 * std_dev
+                uncertainty_fill.set_xy([
+                    [left,   0],
+                    [right,  0],
+                    [right,  Y_LIM],
+                    [left,   Y_LIM],
+                    [left,   0]
+                ])                
 
             prior_x = ukf.x.copy()
             prior_P = ukf.P.copy()
@@ -294,27 +300,7 @@ if __name__ == "__main__":
             ukf.update(measurement)            
             est_pos = ukf.x[0]
             surface_h = h(est_pos)
-            current_x = ukf.x if show_posterior else predicted_x if show_predicted else prior_x
-            current_P = ukf.P if show_posterior else predicted_P if show_predicted else prior_P            
-
-        # Posterior (red) ─ only moves in last step
-        if show_posterior:
-            est_dot.set_data([est_pos], [surface_h])
-            est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])
-            if est_bird_marker:
-                est_bird_marker[0].remove()
-                est_bird_marker.clear()
-            img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
-            est_img = img.copy()
-            est_img[..., 3] *= 0.2
-
-            est_imagebox = OffsetImage(est_img, zoom=0.05)
-            est_ab = AnnotationBbox(est_imagebox,
-                                    (est_pos, BIRD_HEIGHT),
-                                    frameon=False,
-                                    zorder=30)
-            ax.add_artist(est_ab)
-            est_bird_marker.append(est_ab)            
+            current_x = ukf.x
 
         # Predicted (purple) ─ visible during prediction & innovation
         if show_predicted:
@@ -325,19 +311,6 @@ if __name__ == "__main__":
         else:
             pred_dot.set_data([], [])
             pred_line.set_data([], [])
-
-        # Uncertainty follows the active estimate
-        if sub >= 1:
-            std_dev = np.sqrt(current_P[0, 0])
-            left = current_x[0] - 2 * std_dev
-            right = current_x[0] + 2 * std_dev
-            uncertainty_fill.set_xy([
-                [left,   0],
-                [right,  0],
-                [right,  Y_LIM],
-                [left,   Y_LIM],
-                [left,   0]
-            ])
 
         # ── Sub-step text & sigma ──
         sigma = None
@@ -362,13 +335,7 @@ if __name__ == "__main__":
                 "\n"
                 "S - Certainty in predicted measurements | Pxz - x uncertainty to measurement uncertainty correlation"
             )
-        elif sub == 5:
-            base_text = (
-                f"Step {k}: Innovation = {ukf.last_innovation[0]:.2f}"
-                "\n"
-                "Innovation - Actual measurement minus predicted measurement"
-            )
-        elif sub == 6:  # Kalman Gain / Trust step
+        elif sub == 5:  # Kalman Gain / Trust step
             if hasattr(ukf, 'last_K') and ukf.last_K is not None:
                 gain = ukf.last_K[0,0]
                 trust_pred = 1 - gain
@@ -376,7 +343,13 @@ if __name__ == "__main__":
                              f"Gain: {gain:.2f}\n"
                              f"Trust Pred Meas: {trust_pred:.2f} | Trust Meas: {gain:.2f}")
             else:
-                base_text = f"Step {k}: Apply Kalman Gain\n(Gain not saved)"
+                base_text = f"Step {k}: Apply Kalman Gain\n(Gain not saved)"            
+        elif sub == 6:
+            base_text = (
+                f"Step {k}: Innovation = {ukf.last_innovation[0]:.2f}"
+                "\n"
+                "Innovation - Actual measurement minus predicted measurement"
+            )
         elif sub == 7:
             dx_corr = ukf.last_K @ ukf.last_innovation
 
@@ -489,27 +462,18 @@ if __name__ == "__main__":
             ruler_s_err = ax.errorbar([], [], yerr=[], fmt='none')            
             ruler_label.set_text('')
 
-        # ── Measurement ──
-        # if sub >= 4:
-        meas_dot.set_data([true_pos], [h(true_pos)])
-        meas_proj_line.set_data([true_pos, true_pos], [h(true_pos), BIRD_HEIGHT])
-        # else:
-        #     meas_dot.set_data([], [])
-        #     meas_proj_line.set_data([], [])
-
         # ── Predicted measurement ──
-        if sub >= 4:
+        if sub > 3 and sub < 7:
             pred_h = ukf.last_z_hat[0]
             pred_meas_dot.set_data([predicted_x[0]], [pred_h])   # x = predicted pos, y = z_hat[0]
         else:
             pred_meas_dot.set_data([], [])
 
-        if sub < 6:
-            # ── Blue & Magenta dot sizes — ONLY in Kalman gain step (sub==6) ──
-            meas_dot.set_markersize(9)
-            pred_meas_dot.set_markersize(9)
+        # if sub < 5:
+        #     # ── Blue & Magenta dot sizes — ONLY in Kalman gain step (sub==6) ──
 
-        if sub == 6 and hasattr(ukf, 'last_K') and ukf.last_K is not None:
+
+        if sub == 5 and hasattr(ukf, 'last_K') and ukf.last_K is not None:
             gain = ukf.last_K[0,0]
             trust_meas = gain
             trust_pred = 1 - gain
@@ -520,9 +484,9 @@ if __name__ == "__main__":
             meas_dot.set_markersize(meas_size)
             pred_meas_dot.set_markersize(pred_size)      
 
-        if sub == 5:
+        if sub == 6:
             pred_h = ukf.last_z_hat[0]
-            meas_h = h(true_pos)
+            meas_h = measurement[0]
             y_low  = min(pred_h, meas_h)
             y_high = max(pred_h, meas_h)
             mid_x  = (predicted_x[0] + true_pos) / 2
@@ -538,22 +502,62 @@ if __name__ == "__main__":
                 arrow_rev = ax.arrow(mid_x, y_high, 0, -dy, head_width=0.6, width=0.25,
                                      length_includes_head=True, color='purple', alpha=0.9, zorder=16)
                 innovation_lines.extend([arrow, arrow_rev])
+        
+        # Posterior (red) ─ only moves in last step        
+        if sub == 7:       
+            est_dot.set_data([est_pos], [surface_h])
+            est_line.set_data([est_pos, est_pos], [h(est_pos), BIRD_HEIGHT])
+            if est_bird_marker:
+                est_bird_marker[0].remove()
+                est_bird_marker.clear()
+            img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
+            est_img = img.copy()
+            est_img[..., 3] *= 0.2
 
-        # ── Bird ──
-        if bird_marker:
-            bird_marker[0].remove()
-            bird_marker.clear()
-        img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
-        imagebox = OffsetImage(img, zoom=0.05)
-        ab = AnnotationBbox(imagebox, (true_pos, BIRD_HEIGHT), frameon=False, zorder=30)
-        ax.add_artist(ab)
-        bird_marker.append(ab)   
+            est_imagebox = OffsetImage(est_img, zoom=0.05)
+            est_ab = AnnotationBbox(est_imagebox,
+                                    (est_pos, BIRD_HEIGHT),
+                                    frameon=False,
+                                    zorder=30)
+            ax.add_artist(est_ab)
+            est_bird_marker.append(est_ab)      
 
-        if sub == 7:
+            std_dev = np.sqrt(ukf.P[0, 0])
+            left = current_x[0] - 2 * std_dev
+            right = current_x[0] + 2 * std_dev
+            uncertainty_fill.set_xy([
+                [left,   0],
+                [right,  0],
+                [right,  Y_LIM],
+                [left,   Y_LIM],
+                [left,   0]
+            ])                             
+             
+            meas_dot.set_markersize(9)
+            pred_meas_dot.set_markersize(9)            
+
+        if sub == 8:
             noise = np.random.normal(0, np.sqrt(Q_VAR))
             true_pos += true_vel * DT + noise[0]
             true_vel += noise[1]
-            true_vel = np.clip(true_vel, 0.8, 1.2)            
+            true_vel = np.clip(true_vel, 0.8, 1.2)     
+
+            true_height = h(true_pos)
+            measurement = np.array([true_height, true_vel]) + \
+                          np.random.multivariate_normal([0, 0], R_VAR)                   
+                          
+            # ── Bird ──
+            if bird_marker:
+                bird_marker[0].remove()
+                bird_marker.clear()
+            img = plt.imread('ukf_explanation_video/Stork_silhouette.png')
+            imagebox = OffsetImage(img, zoom=0.05)
+            ab = AnnotationBbox(imagebox, (true_pos, BIRD_HEIGHT), frameon=False, zorder=30)
+            ax.add_artist(ab)
+            bird_marker.append(ab)    
+            # ── Measurement ──
+            meas_dot.set_data([true_pos], [measurement[0]])
+            meas_proj_line.set_data([true_pos, true_pos], [measurement[0], BIRD_HEIGHT])                       
 
         return (est_dot, est_line, pred_dot, pred_line, sigma_dots, meas_dot, meas_proj_line,
                 pred_meas_dot, annotation, *projection_lines, *innovation_lines)
@@ -568,16 +572,7 @@ if __name__ == "__main__":
             update(current_frame)
             fig.canvas.draw_idle()
             current_frame += 1
-    fig.canvas.mpl_connect('key_press_event', on_key)
-
-    ## If I want to advance animation via mouse click
-    # def on_click(event):
-    #     global current_frame
-    #     update(current_frame)
-    #     fig.canvas.draw_idle()
-    #     current_frame += 1
-
-    # fig.canvas.mpl_connect('button_press_event', on_click)    
+    fig.canvas.mpl_connect('key_press_event', on_key)  
 
     plt.tight_layout(pad=0)
     plt.show()
@@ -585,3 +580,4 @@ if __name__ == "__main__":
 
 # TODO: 
 # 5. Use the phrases predictor corrector phrasing.
+# 2. Maybe start so that the measurement space sigma points make sense in terms of the mean position.
