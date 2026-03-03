@@ -160,7 +160,6 @@ if __name__ == "__main__":
     est_dot, = ax.plot([], [], 'o', color='red', ms=10, mec='white', mew=2, zorder=18, label='Posterior Estimate')
     est_line, = ax.plot([], [], '--', color = 'red', lw=1.5, alpha=0.85, zorder=10)
 
-    pred_dot, = ax.plot([], [], 'o', color='purple', ms=9, mec='white', mew=1.5, zorder=16, label='Predicted Estimate')
     pred_line = ax.axvline(0, color='purple', ls=':', alpha=0.7, zorder=15, lw=1.2)
 
     sigma_dots = ax.scatter([], [], s=20, c='green', alpha=0.65, zorder=14)
@@ -247,7 +246,7 @@ if __name__ == "__main__":
         k = frame // sub_steps
         sub = frame % sub_steps
 
-        show_predicted  = 2 <= sub <= 6
+        show_predicted  = 2 <= sub <= 7
 
         if sub == 0:
             if _first_call:
@@ -306,10 +305,19 @@ if __name__ == "__main__":
         if show_predicted:
             pred_pos = predicted_x[0]
             pred_h = h(pred_pos)
-            pred_dot.set_data([pred_pos], [pred_h])
             pred_line.set_data([pred_pos], [pred_h / Y_LIM, 1.0])
+
+            std_dev = np.sqrt(predicted_P[0, 0])
+            left = predicted_x[0] - 2 * std_dev
+            right = predicted_x[0] + 2 * std_dev
+            uncertainty_fill.set_xy([
+                [left,   0],
+                [right,  0],
+                [right,  Y_LIM],
+                [left,   Y_LIM],
+                [left,   0]
+            ])            
         else:
-            pred_dot.set_data([], [])
             pred_line.set_data([], [])
 
         # ── Sub-step text & sigma ──
@@ -320,15 +328,15 @@ if __name__ == "__main__":
             base_text = f"Step {k}: Prior\nEst: {prior_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 1:
                 sigma = ukf.last_prior_sigma
-                sigma_label = " (prior σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
+                sigma_label = " (prior σ)"
         elif sub in [2, 3]:
             base_text = f"Step {k}: Predicted\nEst: {predicted_x[0]:.2f} | True: {true_pos:.2f}"
             if sub == 2:
                 sigma = ukf.last_pred_sigma
-                sigma_label = " (predicted σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
+                sigma_label = " (predicted σ)"
             elif sub == 3:
                 sigma = ukf.last_meas_sigma
-                sigma_label = " (meas-mapped σ)\n(σ points: orange = position, teal = velocity, grey = mean)"
+                sigma_label = " (meas-mapped σ)"
         elif sub == 4:
             base_text = (
                 f"Step {k}: S = {ukf.last_S[0,0]:.2f} | Pxz = {ukf.last_Pxz[0,0]:.2f}"
@@ -340,7 +348,7 @@ if __name__ == "__main__":
                 gain = ukf.last_K[0,0]
                 trust_pred = 1 - gain
                 base_text = (f"Step {k}: Apply Kalman Gain\n"
-                             f"Gain: {gain:.2f}\n"
+                             f"Gain: {gain:.2f}  (K = Pxz · S⁻¹)\n"
                              f"Trust Pred Meas: {trust_pred:.2f} | Trust Meas: {gain:.2f}")
             else:
                 base_text = f"Step {k}: Apply Kalman Gain\n(Gain not saved)"            
@@ -366,7 +374,7 @@ if __name__ == "__main__":
                 rf" = {est_pos:.2f}$"
             )
         else:
-            base_text = f"Step {k}: Done"
+            base_text = f"Step {k+1}: Bird advances"
 
         annotation.set_text(base_text + sigma_label)
 
@@ -463,7 +471,7 @@ if __name__ == "__main__":
             ruler_label.set_text('')
 
         # ── Predicted measurement ──
-        if sub > 3 and sub < 7:
+        if sub > 3 and sub <= 7:
             pred_h = ukf.last_z_hat[0]
             pred_meas_dot.set_data([predicted_x[0]], [pred_h])   # x = predicted pos, y = z_hat[0]
         else:
@@ -523,18 +531,15 @@ if __name__ == "__main__":
             est_bird_marker.append(est_ab)      
 
             std_dev = np.sqrt(ukf.P[0, 0])
-            left = current_x[0] - 2 * std_dev
-            right = current_x[0] + 2 * std_dev
+            left = est_pos - 2 * std_dev
+            right = est_pos + 2 * std_dev
             uncertainty_fill.set_xy([
                 [left,   0],
                 [right,  0],
                 [right,  Y_LIM],
                 [left,   Y_LIM],
                 [left,   0]
-            ])                             
-             
-            meas_dot.set_markersize(9)
-            pred_meas_dot.set_markersize(9)            
+            ])            
 
         if sub == 8:
             noise = np.random.normal(0, np.sqrt(Q_VAR))
@@ -546,6 +551,9 @@ if __name__ == "__main__":
             measurement = np.array([true_height, true_vel]) + \
                           np.random.multivariate_normal([0, 0], R_VAR)                   
                           
+            meas_dot.set_markersize(9)
+            pred_meas_dot.set_markersize(9)  
+                                      
             # ── Bird ──
             if bird_marker:
                 bird_marker[0].remove()
@@ -559,7 +567,7 @@ if __name__ == "__main__":
             meas_dot.set_data([true_pos], [measurement[0]])
             meas_proj_line.set_data([true_pos, true_pos], [measurement[0], BIRD_HEIGHT])                       
 
-        return (est_dot, est_line, pred_dot, pred_line, sigma_dots, meas_dot, meas_proj_line,
+        return (est_dot, est_line, pred_line, sigma_dots, meas_dot, meas_proj_line,
                 pred_meas_dot, annotation, *projection_lines, *innovation_lines)
 
     total_frames = NUM_STEPS * sub_steps
