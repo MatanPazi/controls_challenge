@@ -123,11 +123,7 @@ def measure_state(x, theta):
     ay_k = x[0]
     b_k  = x[5]
     
-    # If the measurement is simply the first state:
-    return np.array([ay_k]) 
-    
-    # If the bias in the state vector is additive to the measurement:
-    # return np.array([ay_k + b_k])
+    return np.array([ay_k + b_k])
 
 # ──────────────────────────────────────────────
 # UKF Class (simplified discrete-time version)
@@ -419,3 +415,4 @@ if __name__ == "__main__":
     print(f"Final filtered bias estimate: {ukf.x[5]:.6f}")
 
     print("Done. Tune R/Q and re-run until filtered trace is smooth but responsive.")
+
