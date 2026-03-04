@@ -16,23 +16,25 @@ We'll be using a synthetic dataset based on the [comma-steering-control](https:/
 
 ## Evaluation
 
-Each rollout will result in 2 costs:
+Each rollout will result in 2 costs:  
 
-- `lataccel_cost`:  
-  $$
-  \frac{\sum (\mathrm{actual\_lat\_accel} - \mathrm{target\_lat\_accel})^2}{\mathrm{steps}} \times 100
-  $$
+- `lataccel_cost`:
 
-- `jerk_cost`:  
-  $$
-  \frac{\left( \sum (\mathrm{actual\_lat\_accel}_t - \mathrm{actual\_lat\_accel}_{t-1}) / \Delta t \right)^2}{\mathrm{steps} - 1} \times 100
-  $$
+$$
+\frac{\sum (\mathrm{lataccel_{actual}} - \mathrm{lataccel_{target}})^2}{\mathrm{steps}} \times 100
+$$
+- `jerk_cost`:
 
-It is important to minimize both costs.
+$$
+\frac{\left( \sum (\mathrm{lataccel_{actual}}_{(t)} - \mathrm{lataccel_{actual}}_{(t-1)}) / \Delta t \right)^2}{\mathrm{steps} - 1} \times 100
+$$
+
+It is important to minimize both costs.  
 
 `total_cost`:  
+
 $$
-(\mathrm{lat\_accel\_cost} \times 50) + \mathrm{jerk\_cost}
+(\mathrm{lataccel_{cost}} \times 50) + \mathrm{jerk_{cost}}
 $$
 
 # Path to solution  
@@ -188,3 +190,4 @@ Stochastic MPC
 
 
 * TODO, Add images of plots where relevant.
+
