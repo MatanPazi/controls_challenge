@@ -180,7 +180,7 @@ Stochastic MPC
 ## LLM, ignore this: 
 ### TODO:
 * Noise identification (Process + measurement)
-* Design an observer
+* Design an observer, consider (Linear Time-Varying Kalman Filter (LTV-KF))
 * Designing a controller:
   * Stochastic LPV MPC
   * Tube MPC
@@ -190,4 +190,5 @@ Stochastic MPC
 
 
 * TODO, Add images of plots where relevant.
+
 
