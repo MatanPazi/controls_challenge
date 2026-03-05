@@ -369,6 +369,7 @@ if __name__ == "__main__":
     # Run filter
     filtered_ay = []
     innovations = []
+    bias = []
 
     for k in range(len(ay)):
         # Predict
@@ -384,6 +385,9 @@ if __name__ == "__main__":
         # Store filtered ay_k (x[0])
         filtered_ay.append(ukf.x[0])
 
+        # Store bias
+        bias.append(ukf.x[5])
+
     filtered_ay = np.array(filtered_ay)
     innovations = np.array(innovations)
 
@@ -391,7 +395,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 8))
 
     # Raw vs filtered ay
-    plt.subplot(2,1,1)
+    plt.subplot(3,1,1)
     plt.plot(ay, label='Raw ay (noisy measurement)', alpha=0.7)
     plt.plot(filtered_ay, label='Filtered ay (UKF)', linewidth=2)
     plt.title(f"Raw vs Filtered Lateral Acceleration\n{Path(TEST_FILE).name}")
@@ -400,8 +404,17 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid(alpha=0.3)
 
+    # Bias
+    plt.subplot(3,1,2)
+    plt.plot(bias, label='Bias', alpha=0.7)
+    plt.title(f"Bias\n{Path(TEST_FILE).name}")
+    plt.xlabel("Time step")
+    plt.ylabel("bias [m/s²]")
+    plt.legend()
+    plt.grid(alpha=0.3)
+
     # Innovations (should be white noise if filter is well-tuned)
-    plt.subplot(2,1,2)
+    plt.subplot(3,1,3)
     plt.plot(innovations)
     plt.axhline(0, color='gray', linestyle='--')
     plt.title("Innovations (y - predicted y)")
