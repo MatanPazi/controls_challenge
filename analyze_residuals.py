@@ -52,7 +52,7 @@ from lpv_arx import (
 THETA_FILE = "lpv_arx_theta.npy"
 
 # Hold-out files (example: routes after first 1000)
-HOLD_OUT_FILES = sorted(glob.glob("data/*.csv"))[1000:1200]
+HOLD_OUT_FILES = sorted(glob.glob("data/*.csv"))[1000:2000]
 
 # ──────────────────────────────────────────────
 # Load one route and apply filtering
@@ -272,10 +272,11 @@ if __name__ == "__main__":
 
     # ─── Histogram ───────────────────────────────────────────────────
     plt.figure(figsize=(9, 5.5))
-    plt.hist(residuals, bins=80, density=True, alpha=0.6, color='cornflowerblue')
+    plt.hist(residuals, bins=500, density=True, alpha=0.6, color='cornflowerblue')
     xmin, xmax = plt.xlim()
     x = np.linspace(xmin, xmax, 200)
     plt.plot(x, norm.pdf(x, mu, std), 'k', lw=2, label='Fitted Gaussian')
+    plt.xlim(-0.3, 0.3) #
     plt.title(f"Residual Histogram (n = {len(residuals):,})\nEstimated R = {var:.6f}")
     plt.xlabel("Prediction error [m/s²]")
     plt.ylabel("Density")
