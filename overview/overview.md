@@ -163,17 +163,39 @@ Here is a comparison between model and actual data for a selected .csv:
 
 The model was implemented and fitted in `lpv_arx.py`, see the script for more details.
 
-### Noise
+### Residual analysis
 
-To be determined later, Though, from a quick inspection, a skewed gaussian was detected.
+Residuals are defined here as: residual = LPV-ARX model prediction − actual lateral acceleration  
 
-How to determine exactly?
+They represent the combined effect of unmodeled dynamics, disturbances, and any remaining modeling mismatch that the observer must compensate for.
 
-This will be used to determine which observer to use.
+Results:  
+Here is the residual distribution alongside the gaussian fit:
+![Residual Distribution](residual_distribution.png)
+
+Residual Statistics:  
+  Mean:          -0.000198  
+  Variance (R):  0.000636  
+  Std dev:       0.025214  
+  Skewness:      -1.3831  (0 = symmetric)  
+  Kurtosis:      128.1552  (0 = Gaussian)  
+  Shapiro-Wilk p: 0.0000  (>0.05 → fail to reject Gaussian)  
+  KS statistic:  0.1676  
+
+We can see the distribution is clearly not gaussian, both by looking at the statistical results and by looking at the plot.
+
+## Observer
+
+Since our model is explicitly linear due to out LPV-ARX model and dependent on speed, I've decided to initially implement an Linear Time-Varying Kalman Filter (LTV-KF) observer.  
+Hopefully the Kalman filter will be robust enough to handle the non-gaussian distribution.  
+Other observers can be tried later on if there is a poor fit.
+
 
 ## Planned controller
-
-Stochastic MPC
+Start with PID as a base reference.  
+Test other controllers later on:
+- Stochastic MPC
+- 
 
 
 
