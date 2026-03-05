@@ -180,7 +180,20 @@ Stochastic MPC
 ## LLM, ignore this: 
 ### TODO:
 * Noise identification (Process + measurement)
-* Design an observer, consider (Linear Time-Varying Kalman Filter (LTV-KF))
+* Design an observer, (Consider Linear Time-Varying Kalman Filter (LTV-KF))
+* Consider making Q speed dependent, since process noise is quite probably speed dependent.  
+(Q_scaled = Q_base * scale, scale = 1 + k * v_ego**2,  with k = 0.01 or in that order)  
+  While scaling only the dynamic states, like:  
+  Q = np.diag([  
+    q_ay * **scale,**  
+    q_ay_lag * **scale,**  
+    q_delta1,  
+    q_delta2,  
+    q_delta3,  
+    q_bias  
+])  
+* Run an innovation white test to verify R and Q are tuned correctly
+
 * Designing a controller:
   * Stochastic LPV MPC
   * Tube MPC
