@@ -124,7 +124,7 @@ ax_right.grid(alpha=0.15, ls=':')
 
 # Overall title
 fig.suptitle("Standard Linear Kalman Filter vs Nonlinear Reality\n"
-             f"Input var = {P:.2f}   |   True output var = {true_var:.3f}   |   KF output var = {kf_var:.3f}",
+             f"True output var = {true_var:.3f}, True output mean = {true_mean:.3f}\nEKF output var = {kf_var:.3f}, EKF output mean = {kf_mean:.3f}",
              fontsize=14, y=0.98)
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
