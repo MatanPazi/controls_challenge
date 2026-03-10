@@ -129,7 +129,7 @@ ax_right.grid(alpha=0.15, ls=':')
 
 # Overall title
 fig.suptitle("Extended Kalman Filter – Before and After Nonlinear Transformation\n"
-             f"Input var = {P:.2f}   |   True output var = {true_var:.3f}   |   EKF output var = {ekf_var:.3f}",
+             f"True output var = {true_var:.3f}, True output mean = {true_mean:.3f}\nEKF output var = {ekf_var:.3f}, EKF output mean = {ekf_mean:.3f}",
              fontsize=14, y=0.98)
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
