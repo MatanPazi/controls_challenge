@@ -56,9 +56,9 @@ Wc = Wm.copy()
 Wc[0] += (1 - alpha**2 + beta)
 
 # UKF mean and covariance
-mu_ukf = np.sum(Wm * y_sigma)
-P_ukf = np.sum(Wc * (y_sigma - mu_ukf)**2)
-sigma_ukf = np.sqrt(P_ukf)
+ukf_mean = np.sum(Wm * y_sigma)
+ukf_var = np.sum(Wc * (y_sigma - ukf_mean)**2)
+sigma_ukf = np.sqrt(ukf_var)
 
 # Monte-Carlo for true distribution
 N = 200_000
@@ -78,7 +78,7 @@ x_max = true_mean + 4.5 * max(true_std, sigma_ukf)
 x_out = np.linspace(x_min, x_max, 800)
 
 true_pdf = kde(x_out)
-ukf_pdf = (1 / np.sqrt(2 * np.pi * P_ukf)) * np.exp(-0.5 * ((x_out - mu_ukf)**2 / P_ukf))
+ukf_pdf = (1 / np.sqrt(2 * np.pi * ukf_var)) * np.exp(-0.5 * ((x_out - ukf_mean)**2 / ukf_var))
 
 # Interpolation for line heights
 interp_true = interp1d(x_out, true_pdf, kind='linear', fill_value=0.0, bounds_error=False)
@@ -88,9 +88,9 @@ h_true_mean  = interp_true(true_mean)
 h_true_plus  = interp_true(true_mean + true_std)
 h_true_minus = interp_true(true_mean - true_std)
 
-h_ukf_mean   = interp_ukf(mu_ukf)
-h_ukf_plus   = interp_ukf(mu_ukf + sigma_ukf)
-h_ukf_minus  = interp_ukf(mu_ukf - sigma_ukf)
+h_ukf_mean   = interp_ukf(ukf_mean)
+h_ukf_plus   = interp_ukf(ukf_mean + sigma_ukf)
+h_ukf_minus  = interp_ukf(ukf_mean - sigma_ukf)
 
 # ────────────────────────────────────────────────
 #  Plotting – two subplots side by side
@@ -128,9 +128,9 @@ ax_right.vlines(true_mean + true_std, 0, h_true_plus, color='#d62728', ls="--", 
 ax_right.vlines(true_mean - true_std, 0, h_true_minus,color='#d62728', ls="--", lw=2.0)
 
 # UKF approximation
-ax_right.vlines(mu_ukf,              0, h_ukf_mean,   color='#2ca02c', ls='-', lw=1.8, label=f"UKF mean = {mu_ukf:.3f}")
-ax_right.vlines(mu_ukf + sigma_ukf,  0, h_ukf_plus,   color='#2ca02c', ls="--", lw=1.4)
-ax_right.vlines(mu_ukf - sigma_ukf,  0, h_ukf_minus,  color='#2ca02c', ls="--", lw=1.4, label=f"UKF ±σ (var = {P_ukf:.3f})")
+ax_right.vlines(ukf_mean,              0, h_ukf_mean,   color='#2ca02c', ls='-', lw=1.8, label=f"UKF mean = {ukf_mean:.3f}")
+ax_right.vlines(ukf_mean + sigma_ukf,  0, h_ukf_plus,   color='#2ca02c', ls="--", lw=1.4)
+ax_right.vlines(ukf_mean - sigma_ukf,  0, h_ukf_minus,  color='#2ca02c', ls="--", lw=1.4, label=f"UKF ±σ (var = {ukf_var:.3f})")
 
 # Transformed sigma points
 ax_right.scatter(y_sigma, np.full_like(y_sigma, 1e-4), s=[140,70,70],
@@ -143,13 +143,13 @@ ax_right.set_ylabel("Probability Density", fontsize=11)
 ax_right.set_yticks([])
 ax_right.set_ylim(0, None)
 ax_right.set_xlim(x_min, x_max)
-ax_right.set_xticks([mu_ukf - sigma_ukf, mu_ukf, mu_ukf + sigma_ukf])
+ax_right.set_xticks([ukf_mean - sigma_ukf, ukf_mean, ukf_mean + sigma_ukf])
 ax_right.set_xticklabels([r"$-\sigma$", r"$\mu$", r"$\sigma$"], fontsize=11)
 ax_right.legend(loc='upper right', fontsize=9.8, framealpha=0.92)
 ax_right.grid(alpha=0.15, ls=':')
 
 fig.suptitle("Unscented Kalman Filter – Before and After Nonlinear Transformation\n"
-             f"Input var = {P:.2f}   |   True output var = {true_var:.3f}   |   UKF output var = {P_ukf:.3f}",
+             f"True output var = {true_var:.3f}, True output mean = {true_mean:.3f}\nEKF output var = {ukf_var:.3f}, EKF output mean = {ukf_mean:.3f}",
              fontsize=14, y=0.98)
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
