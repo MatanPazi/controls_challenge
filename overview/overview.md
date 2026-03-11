@@ -186,7 +186,7 @@ We can see the distribution is clearly not gaussian, both by looking at the stat
 
 ## Observer
 
-Since our model is explicitly linear due to out LPV-ARX model and dependent on speed, I've decided to initially implement an Linear Time-Varying Kalman Filter (LTV-KF) observer.  
+Since our model is explicitly linear due to our LPV-ARX model, I've decided to initially implement a Linear Time-Varying Kalman Filter (LTV-KF) observer.  
 Hopefully the Kalman filter will be robust enough to handle the non-gaussian distribution.  
 Other observers can be tried later on if there is a poor fit.
 
@@ -225,5 +225,6 @@ Test other controllers later on:
 
 
 * TODO, Add images of plots where relevant.
+
 
 
