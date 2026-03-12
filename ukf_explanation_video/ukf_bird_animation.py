@@ -571,7 +571,9 @@ if __name__ == "__main__":
                 pred_meas_dot, annotation, *projection_lines, *innovation_lines)
 
     total_frames = NUM_STEPS * sub_steps
-    # ani = FuncAnimation(fig, update, frames=total_frames, interval=200, blit=False)
+    # ani = FuncAnimation(fig, update, frames=total_frames, interval=20, blit=False)
+    # ani.save("ukf_animation.mp4", writer="ffmpeg", fps=5, dpi=100,
+    #           extra_args=["-vcodec", "libx264", "-pix_fmt", "yuv420p"])
 
     # Advance animation via spacebar
     def on_key(event):
