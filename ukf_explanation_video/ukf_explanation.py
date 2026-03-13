@@ -96,7 +96,11 @@ h_ukf_minus  = interp_ukf(ukf_mean - sigma_ukf)
 #  Plotting – two subplots side by side
 # ────────────────────────────────────────────────
 
-fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(18, 6), sharey=False)
+fig, (ax_left, ax_right) = plt.subplots(
+    1, 2,
+    figsize=(19.2, 10.8),
+    sharey=False
+)
 
 # ── Left: Input Gaussian + Sigma Points ────────────────────────────────
 ax_left.plot(x_prior, pdf_prior, lw=2.2, color='#1f77b4', label='Gaussian PDF')
@@ -149,8 +153,9 @@ ax_right.legend(loc='upper right', fontsize=9.8, framealpha=0.92)
 ax_right.grid(alpha=0.15, ls=':')
 
 fig.suptitle("Unscented Kalman Filter – Before and After Nonlinear Transformation\n"
-             f"True output var = {true_var:.3f}, True output mean = {true_mean:.3f}\nEKF output var = {ukf_var:.3f}, EKF output mean = {ukf_mean:.3f}",
+             f"True output var = {true_var:.3f}, True output mean = {true_mean:.3f}\nUKF output var = {ukf_var:.3f}, UKF output mean = {ukf_mean:.3f}",
              fontsize=14, y=0.98)
 
-plt.tight_layout(rect=[0, 0, 1, 0.96])
+plt.tight_layout(rect=[0, 0, 1, 0.99999])
+plt.savefig("kalman_plot.png", dpi=100, bbox_inches="tight")
 plt.show()
