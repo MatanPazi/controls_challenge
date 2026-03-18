@@ -53,11 +53,12 @@ $$
 * Choose model and identify system
   * Several models possible
   * A lot of nuance
-* Identify noise
-  * Needed for observer. The better the noise models are, the better the observer will perform.
-* Choose and tune an observer
-  * Necessary for smooth inputs to the controller (Noisy data)
-  * Chosen observer mostly depends on the noise distribution and the model linearity. Compute cost isn't crucial here.
+* Not needed in this case. We get absolute truth data, not noisy measurements.
+  * Identify noise
+    * Needed for observer. The better the noise models are, the better the observer will perform.
+  * Choose and tune an observer
+    * Necessary for smooth inputs to the controller (Noisy data)
+    * Chosen observer mostly depends on the noise distribution and the model linearity. Compute cost isn't crucial here.
 * Choose and tune a controller
   * Again, many options
 
