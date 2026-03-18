@@ -394,5 +394,5 @@ if __name__ == "__main__":
 
 
     # Pick one or more files you want to visualize
-    example_file = "data_excitation/00199_excitation_step_pos.csv"   # change to any valid route
+    example_file = "data_excitation/00019_excitation_step.csv"   # change to any valid route
     plot_simulation_on_file(theta, example_file)
