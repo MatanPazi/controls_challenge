@@ -168,6 +168,17 @@ class TinyPhysicsSimulator:
     self.futureplan = futureplan
     self.control_step(self.step_idx)
     self.sim_step(self.step_idx)
+    
+    # ─── ADD LOGGING ─────────────────────────────────────
+    if hasattr(self, '_log_enabled') and self._log_enabled:
+      self._log_data["vEgo"].append(state.v_ego)
+      self._log_data["aEgo"].append(state.a_ego)
+      self._log_data["roll"].append(state.roll_lataccel)
+      self._log_data["steerCommand"].append(self.action_history[-1])
+      self._log_data["targetLateralAcceleration"].append(target)
+      self._log_data["current_lataccel"].append(self.current_lataccel)
+    # ─────────────────────────────────────────────────────
+
     self.step_idx += 1
 
   def plot_data(self, ax, lines, axis_labels, title) -> None:
@@ -208,6 +219,22 @@ class TinyPhysicsSimulator:
       plt.ioff()
       plt.show()
     return self.compute_cost()
+  
+  def enable_logging(self):
+    self._log_enabled = True
+    self._log_data = {
+        "vEgo": [],
+        "aEgo": [],
+        "roll": [],
+        "steerCommand": [],
+        "targetLateralAcceleration": [],
+        "current_lataccel": []
+    }
+
+  def get_log_df(self):
+    if not hasattr(self, '_log_data'):
+      raise ValueError("Logging not enabled - call enable_logging() first")
+    return pd.DataFrame(self._log_data)  
 
 
 def get_available_controllers():
@@ -262,4 +289,4 @@ if __name__ == "__main__":
     plt.ylabel('Frequency')
     plt.title('costs Distribution')
     plt.legend()
-    plt.show()
+    # plt.show()
