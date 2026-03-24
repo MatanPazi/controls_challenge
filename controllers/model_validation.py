@@ -14,16 +14,25 @@ ay_actual = data["ay"]
 ay_pred = data["ay_pred"]
 ay_ref =  data["ay_ref"]
 
-plt.plot(t, ay_actual, label="Actual")
-plt.plot(t, ay_pred, label="Predicted")
 
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True) # sharex=True aligns the x-axes
 ctrl_rmse = np.sqrt(((ay_ref - ay_actual) ** 2).mean())
 pred_rmse = np.sqrt(((ay_pred - ay_actual) ** 2).mean())
 
-plt.legend()
-plt.title(f"Control RMSE: {ctrl_rmse:.4f}, Prediction RMSE: {pred_rmse:.4f}")
-plt.xlabel("Step")
-plt.ylabel("Lateral Acceleration")
+# Plot data on the first (top) subplot
+ax1.plot(t, ay_actual, label="Actual")
+ax1.plot(t, ay_pred, label="Predicted")
+ax1.set_xlabel('Time (s)')
+ax1.set_ylabel('Lateral acceleration [m/s^2]')
+ax1.set_title(f'Actual Vs. Predicted - RMSE = {pred_rmse:.4f}')
+ax1.legend()
 
-plt.grid()
+# Plot data on the second (bottom) subplot
+ax2.plot(t, ay_actual - ay_ref, label="Error")
+ax2.set_xlabel('Time (s)')
+ax2.set_ylabel('Lateral acceleration [m/s^2]')
+ax2.set_title(f'Error - RMSE = {ctrl_rmse:.4f}')
+ax2.legend()
+
+plt.tight_layout() 
 plt.show()
