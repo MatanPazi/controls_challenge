@@ -74,64 +74,79 @@ The columns names are as follows:
 * steerCommand  $[rad]$
 
 ## Defining the state vector, $x_k$:
-### ***CHANGE, Going with LPV state-space*** Will need to change my statve vector.
-Tried an LPV-ARX model. It performed well as a short‑term predictor, but was a poor choice to use with a controller.  
-It learned patterns rather than physical cause‑and‑effect — and control needs cause‑and‑effect.  
-The model was good at:  
-“What happens next?”.
 
-But what was needed was:  
-“What should I do (steer) to make something happen?”.
+$$
+x_k =
+\begin{bmatrix}
+\kappa_k \\
+\dot{\kappa}_k \\
+\delta_{k-1} \\
+\delta_{k-2} \\
+\delta_{k-3} \\
+\end{bmatrix}
+$$
 
-According to the costs in this challenge, the current and previous lateral acceleration are sufficient to calculate both, so those 2 states are crucial to have in the state vector.
+- $\kappa_k$ : path curvature  
+- $\dot{\kappa}_k$ : curvature rate  
+- $\delta_{k-i}$ : steering commands delayed by \(i\) samples  
 
-A preliminary test showed there is some sample delay in the system.  
-So, I need to include some previous steering commands because this delay will affect the resulting lateral acceleration and lateral jerk.  
-I'm also adding the accelerometer bias, because using the observer will allow me to estimate it and use it to get more accurate lateral acceleration measurments.  
-See **System identification** -> **Delay** to understand why 3 previous steer commands were chosen.
 
-- $ay_k$  
-- $ay_{k-1}$  
-- $delta_{k-1}$  
-- $delta_{k-2}$  
-- $delta_{k-3}$ 
-- $b_k$
+This 5-state vector was chosen because it captures the vehicle's lateral dynamics in a **simple, physically meaningful, and control-friendly** way:
 
-### Legend
-- ay - lateral acceleration $[m/s^2]$
-- delta - steering command  $[rad]$
-- b - IMU lateral-accel bias (random walk)
+- **$\kappa_k$** (curvature) and **$\dot{\kappa}_k$** (curvature rate) describe how sharply the vehicle is turning and how quickly that turning is changing.  
+  These two states contain all the essential information needed to compute lateral acceleration using the natural relationship:
+  $$
+  a_{y,k} \approx v_k^2 \cdot \kappa_k
+  $$
+
+- **Three delayed steering commands** $\delta_{k-1}$, $\delta_{k-2}$, $\delta_{k-3}$ help model the bulk of the actuator and computation delay in the system. This "memory" of recent steering inputs makes the model realistic and helps the controller account for commands that are still in the pipeline.  
+See the following delay section to understand why 3 sample delays were chosen.
+
+The curvature states evolve according to straightforward kinematic equations:
+- Curvature is the integral of its rate: $\kappa_{k+1} = \kappa_k + \dot{\kappa}_k \cdot \Delta t$ 
+- Curvature rate depends on the delayed steering input and speed-dependent (LPV) terms.
+
+### State Update Equations (Discrete-Time, LPV)
+
+1. Curvature integration
+$$
+\kappa_{k+1} = \kappa_k + \dot{\kappa}_k \cdot \Delta t
+$$
+
+2. Curvature-rate dynamics (LPV + distributed delay)
+$$
+\dot{\kappa}_{k+1}
+= a(v_k) \cdot \dot{\kappa}_k
++ \sum_{i=1}^{3} b_i(v_k) \cdot \delta_{k-i}
++ c(v_k) \cdot a_{\text{Ego},k}
+$$
+
+Where:
+- $a(v)$ : speed-dependent damping (pole location, typically $(0 < a(v) < 1)$)  
+- $b_i(v)$ : speed-dependent steering influence for each delay tap $i$  
+- $c(v)$ : small correction for longitudinal load transfer
+
+**Previous state space failed:**  
+*Tried an LPV-ARX model with a state vector of $(a_y, a_{y-1}, \delta_{k-i})$. It performed well as a short‑term predictor, but was a poor choice to use with a controller. **It learned patterns rather than physical cause‑and‑effect** — and control needs cause‑and‑effect.
+The model was good at:
+“What happens next?”, but what was needed was:
+“What should I do (steer) to make something happen?”.*
+
+
+## Output Equation (Used for Cost)
+
+$$
+a_{y,k} = v_k^2 \cdot \kappa_k + \text{road\_lataccel}_k
+$$
+
 
 ## Exogenous Inputs (ζₖ)
 
 Next are the exogenous inputs. I'm not interested in them directly, nor do I command them, but they affect the system response so they're taken into account.
 
-- $vx_k$
-- $ax_k$
-- $r_k$
-
-### Legend
-- $vx_k$ - longitudinal speed $[m/s]$
-- $ax_k$ - longitudinal acceleration  $[m/s^2]$ 
-- $r_k$  - road roll lateral acceleration $[m/s^2]$
-
-## State Update
-
-The dynamics of the system are modeled using a linear parameter-varying (LPV) state-space representation. This means that the dynamics change as a function of the exogenous inputs (Specifically the longitudinal speed).  
-
-$$
-x_{k+1} = A(\zeta_k) x_k + B u_k + E(\zeta_k) \zeta_k + w_k
-$$
-
-### Legend
-- $x_{k}$ - State vector at discrete time step k
-- $A(\zeta_k)$ - State transition matrix - depends on ζ_k to capture speed-varying dynamics
-- $\zeta_k$  - Exogenous scheduling/disturbance vector
-- $B$ - Input matrix - maps current steering command to state update (assumed constant)
-- $u_k$ - Control input (steering command δ_k at time k)
-- $E(\zeta_k)$ - Exogenous/disturbance input matrix - depends on $\zeta_k$ to model direct effects of speed, acceleration, and road bank on the state
-- $w_k$ - Process noise vector (covariance Q) - accounts for unmodeled effects (road irregularities, wind, tire nonlinearities, etc.)
-
+- $v$ - longitudinal speed $[m/s]$
+- $a$ - longitudinal acceleration  $[m/s^2]$ 
+- $r$  - road roll lateral acceleration $[m/s^2]$
 
 ## System identification
 
@@ -150,7 +165,8 @@ Here is the test_delay.py script output:
 ![# of routes vs sample delay](test_delay_100_routes.png)
 
 As an initial step, I'll include the last three previous steering commands.
-I'd rather keep the state dimension as small as possible.
+I'd rather keep the state dimension as small as possible.  
+Hopefully this will contain the bulk of the delayed data to get good results.  
 The # of sample delays can be adjusted later if needed.
 
 ### Model Description
