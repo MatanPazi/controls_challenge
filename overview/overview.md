@@ -74,6 +74,14 @@ The columns names are as follows:
 * steerCommand  $[rad]$
 
 ## Defining the state vector, $x_k$:
+### ***CHANGE, Going with LPV state-space*** Will need to change my statve vector.
+Tried an LPV-ARX model. It performed well as a short‑term predictor, but was a poor choice to use with a controller.  
+It learned patterns rather than physical cause‑and‑effect — and control needs cause‑and‑effect.  
+The model was good at:  
+“What happens next?”.
+
+But what was needed was:  
+“What should I do (steer) to make something happen?”.
 
 According to the costs in this challenge, the current and previous lateral acceleration are sufficient to calculate both, so those 2 states are crucial to have in the state vector.
 
