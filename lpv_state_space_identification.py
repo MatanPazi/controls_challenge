@@ -6,7 +6,7 @@ Fits LPV state-space model:
 kappa_{k+1} = kappa_k + dt * kappa_dot_k
 kappa_dot_{k+1} = a(v)*kappa_dot_k + b(v)*delta_k
 
-a(v), b(v) are quadratic in v: [1, v, v^2]
+a(v), b(v) use configurable LPV basis
 """
 
 import numpy as np
@@ -24,16 +24,26 @@ from tinyphysics import CONTROL_START_IDX
 DATA_DIR = Path("data_excitation")
 MAX_ROUTES = 1000
 MIN_SPEED = 3.0
-DT = 0.1   # <-- adjust to your simulator timestep
+DT = 0.1
 
 LAMBDA_RIDGE = 1e-3
+
+# 🔴 CHANGE THIS ONLY
+BASIS_DIM = 2   # 1 = const, 2 = [1,v], 3 = [1,v,v²]
 
 # ============================
 # Basis
 # ============================
 
 def lpv_basis(v):
-    return np.stack([np.ones_like(v), v, v**2], axis=1)  # (N,3)
+    if BASIS_DIM == 1:
+        return np.ones((len(v), 1))
+    elif BASIS_DIM == 2:
+        return np.stack([np.ones_like(v), v], axis=1)
+    elif BASIS_DIM == 3:
+        return np.stack([np.ones_like(v), v, v**2], axis=1)
+    else:
+        raise ValueError("Unsupported BASIS_DIM")
 
 # ============================
 # Load data
@@ -51,7 +61,7 @@ def build_regression(files):
     X_blocks = []
     y_blocks = []
 
-    for f in files:
+    for i, f in enumerate(files):
         df = pd.read_csv(f)
 
         if not all(col in df.columns for col in ["current_lataccel", "steerCommand", "vEgo"]):
@@ -76,33 +86,33 @@ def build_regression(files):
         if len(ay) < 10:
             continue
 
-        # Compute curvature
+        # curvature
         kappa = ay / np.maximum(v**2, 1e-3)
 
-        # Compute kappa_dot (finite difference)
+        # derivative
         kappa_dot = np.zeros_like(kappa)
         kappa_dot[1:] = (kappa[1:] - kappa[:-1]) / DT
 
-        # Shift for regression
+        # regression signals
         kdot_k   = kappa_dot[:-1]
         kdot_k1  = kappa_dot[1:]
         delta_k  = delta[:-1]
         v_k      = v[:-1]
 
-        phi = lpv_basis(v_k)  # (N,3)
-
-        # Build regression:
-        # kdot[k+1] = a(v)*kdot[k] + b(v)*delta[k]
+        phi = lpv_basis(v_k)   # (N, BASIS_DIM)
 
         X = np.hstack([
-            phi * kdot_k[:, None],   # a(v)*kdot
-            phi * delta_k[:, None],  # b(v)*delta
-        ])  # shape (N, 6)
+            phi * kdot_k[:, None],
+            phi * delta_k[:, None],
+        ])  # (N, 2*BASIS_DIM)
 
         y = kdot_k1
 
         X_blocks.append(X)
         y_blocks.append(y)
+
+        if (i + 1) % 50 == 0:
+            print(f"[{i+1}/{len(files)}] processed")
 
     X = np.vstack(X_blocks)
     y = np.concatenate(y_blocks)
@@ -132,31 +142,35 @@ def fit_model(X, y, lam=1e-3):
 # ============================
 
 def print_model(theta):
-    a_coeffs = theta[:3]
-    b_coeffs = theta[3:]
+    a_coeffs = theta[:BASIS_DIM]
+    b_coeffs = theta[BASIS_DIM:]
+
+    basis_names = ["1", "v", "v²"][:BASIS_DIM]
 
     print("\n=== LPV State-Space Model ===")
 
-    print("\na(v) = a0 + a1*v + a2*v^2")
-    print(f"  a0 = {a_coeffs[0]:.6f}")
-    print(f"  a1 = {a_coeffs[1]:.6f}")
-    print(f"  a2 = {a_coeffs[2]:.6f}")
+    print("\na(v) = ", end="")
+    print(" + ".join([f"a{i}*{basis_names[i]}" for i in range(BASIS_DIM)]))
+    for i, c in enumerate(a_coeffs):
+        print(f"  a{i} = {c:.6f}")
 
-    print("\nb(v) = b0 + b1*v + b2*v^2")
-    print(f"  b0 = {b_coeffs[0]:.6f}")
-    print(f"  b1 = {b_coeffs[1]:.6f}")
-    print(f"  b2 = {b_coeffs[2]:.6f}")
+    print("\nb(v) = ", end="")
+    print(" + ".join([f"b{i}*{basis_names[i]}" for i in range(BASIS_DIM)]))
+    for i, c in enumerate(b_coeffs):
+        print(f"  b{i} = {c:.6f}")
 
+# ============================
+# Simulation
+# ============================
 
 def simulate_model(df, theta, dt=0.1):
-    a_coeffs = theta[:3]
-    b_coeffs = theta[3:]
+    a_coeffs = theta[:BASIS_DIM]
+    b_coeffs = theta[BASIS_DIM:]
 
     ay = df["current_lataccel"].values
     delta = df["steerCommand"].values
     v = df["vEgo"].values
 
-    # init from real data
     kappa = ay[0] / max(v[0]**2, 1e-3)
     kappa_dot = 0.0
 
@@ -165,20 +179,24 @@ def simulate_model(df, theta, dt=0.1):
     for k in range(len(ay)):
         v_k = v[k]
 
-        phi = np.array([1.0, v_k, v_k**2])
+        phi = lpv_basis(np.array([v_k]))[0]
+
         a_v = np.dot(phi, a_coeffs)
         b_v = np.dot(phi, b_coeffs)
 
-        # state update
         kappa_dot = a_v * kappa_dot + b_v * delta[k]
         kappa = kappa + dt * kappa_dot
 
-        ay_pred.append(v_k**2 * kappa)
+        roll_k = df["roll"].values[k] if "roll" in df.columns else 0.0
+        ay_pred.append(v_k**2 * kappa + roll_k)
 
-    return np.array(ay_pred)    
+    return np.array(ay_pred)
 
-def compare_model(theta, file_path):    
-    
+# ============================
+# Compare
+# ============================
+
+def compare_model(theta, file_path):
     df = pd.read_csv(file_path)
 
     ay_true = df["current_lataccel"].values
