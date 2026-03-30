@@ -80,27 +80,20 @@ x_k =
 \begin{bmatrix}
 \kappa_k \\
 \dot{\kappa}_k \\
-\delta_{k-1} \\
-\delta_{k-2} \\
-\delta_{k-3} \\
 \end{bmatrix}
 $$
 
 - $\kappa_k$ : path curvature  
 - $\dot{\kappa}_k$ : curvature rate  
-- $\delta_{k-i}$ : steering commands delayed by \(i\) samples  
 
 
-This 5-state vector was chosen because it captures the vehicle's lateral dynamics in a **simple, physically meaningful, and control-friendly** way:
+This 2-state vector was chosen because it captures the vehicle's lateral dynamics in a **simple, physically meaningful, and control-friendly** way:
 
 - **$\kappa_k$** (curvature) and **$\dot{\kappa}_k$** (curvature rate) describe how sharply the vehicle is turning and how quickly that turning is changing.  
   These two states contain all the essential information needed to compute lateral acceleration using the natural relationship:
   $$
   a_{y,k} \approx v_k^2 \cdot \kappa_k
   $$
-
-- **Three delayed steering commands** $\delta_{k-1}$, $\delta_{k-2}$, $\delta_{k-3}$ help model the bulk of the actuator and computation delay in the system. This "memory" of recent steering inputs makes the model realistic and helps the controller account for commands that are still in the pipeline.  
-See the following delay section to understand why 3 sample delays were chosen.
 
 The curvature states evolve according to straightforward kinematic equations:
 - Curvature is the integral of its rate: $\kappa_{k+1} = \kappa_k + \dot{\kappa}_k \cdot \Delta t$ 
@@ -152,7 +145,7 @@ Next are the exogenous inputs. I'm not interested in them directly, nor do I com
 
 ### Delay
 
-The effective sample delay in the TinyPhysics ONNX model was identified using the test_delay.py script.  
+I initially thought there were some sample delays that were dependent on speed, so I ran an analysis on the sample delays of the TinyPhysics ONNX model using the test_delay.py script.  
 This was done by comparing lateral acceleration trajectories between a zero-steer controller and a constant step-steer controller on real driving segments.
 
 The delay was measured by how many simulation steps pass after control start (CONTROL_START_IDX) 
@@ -164,10 +157,12 @@ Though the majority of routes exhibited 2 sample delays, with a relatively linea
 Here is the test_delay.py script output:
 ![# of routes vs sample delay](test_delay_100_routes.png)
 
-As an initial step, I'll include the last three previous steering commands.
-I'd rather keep the state dimension as small as possible.  
-Hopefully this will contain the bulk of the delayed data to get good results.  
-The # of sample delays can be adjusted later if needed.
+But after closer examination, I noticed the following behavior:  
+![lateral acceleration response](to_delay_or_not_delay.png)
+
+And we can clearly see this is simply a certain dynamic response to an impulse, or step command, and not a sample delay.  
+It could be modeled as a certain FIR sample delay filter, with certain weights for each sample delay, but I didn't notice any significant correlation between the weights and any other parameters (speed, acceleration, etc.).  
+Thus my conclusion is that this is simply the response of the system which can be modeled in the system dynamics and not as explicit sample delays.
 
 ### Model Description
 
