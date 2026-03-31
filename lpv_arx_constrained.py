@@ -4,11 +4,11 @@ LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
 This script fits a Linear Parameter-Varying AutoRegressive with eXogenous inputs (LPV-ARX) model 
 to predict the next lateral acceleration (current_lataccel) from:
 - Past lateral accelerations (NA lags)
-- Past steering commands (NDELTA lags)
-- Current exogenous signals: vEgo, aEgo, roll
+- Current steer command (NUM_STEER_TERMS)
+- A choice of current exogenous signals: vEgo, aEgo, roll
 
-The model uses a quadratic basis in vEgo (constant + linear + v²) to make coefficients speed-dependent, 
-capturing the strong v² dependence in vehicle lateral dynamics.
+The model allows the use of a quadratic basis in vEgo (constant + linear + v²) to make coefficients speed-dependent, 
+capturing the potentially strong v² dependence in vehicle lateral dynamics.
 
 Key steps:
 1. Loads CSV files from data folder (limited to MAX_ROUTES)
@@ -25,6 +25,7 @@ Usage: Run the script -> get theta -> use in simulation/control design.
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import glob
 from pathlib import Path
 import time
@@ -38,19 +39,25 @@ from scipy.optimize import lsq_linear
 # ============================
 
 DATA_DIR = Path("data_excitation")
-MAX_ROUTES = 2000
-LAMBDA_RIDGE = 1e-4     # Small penalty to prevent overfitting (higher = simpler model).
+MAX_ROUTES = 1000
+LAMBDA_RIDGE = 1e-4         # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 2                  # Use 2 past ay values
-NDELTA = 3              # Use 3 past steering commands (Observed sample delay)
-BASIS_DIM = 2           # number of basis functions per regressor (const + v + v²)
-NUM_EXO_VAR = 3         # number of exogenous inputs (vEgo, aEgo, roll)
+NA = 1                      # Use 1 past ay values
+NUM_STEER_TERMS = 1         # Only current steer (Assumes lag = 0)
+BASIS_DIM = 1               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
-FEATURE_DIM = BASIS_DIM * (NA + NDELTA + NUM_EXO_VAR)   # Total columns in the feature matrix.
-                                                        # Each regressor (past ay, past steer, exogenous) gets 3 basis terms (1, v, v²)
-                                                        # So 3 * (2 + 3 + 3) = 24 total parameters.
+# === NEW: Dynamic exogenous variables ===
+EXO_VARS = ['vEgo', 'roll']             # Change as needed, examples:
+                                        # ["vEgo"] 
+                                        # ["vEgo", "roll"]
+                                        # ["vEgo", "aEgo"]
+                                        # ["vEgo", "roll", "aEgo"]
 
-MIN_SPEED = 3           # [m/s] — Excluding low speeds to avoid highly non-linear behavior
+FEATURE_DIM = BASIS_DIM * (NA + NUM_STEER_TERMS + len(EXO_VARS))    # Total columns in the feature matrix.
+                                                                    # Each regressor (past ay, steer, exogenous) gets BASIS_DIM basis terms (1, v, v²)
+                                                                    # So 1 * (1 + 1 + 2) = 4 total parameters.
+
+MIN_SPEED = 3.0
 
 # ============================
 # LPV basis
@@ -165,9 +172,8 @@ def build_regression(files):
         roll  = roll[valid_mask]
 
         N = len(ay)
-        k0 = max(NA, NDELTA)        # Minimum number of time steps we need to skip at the beginning of each route so that we have enough past history for every prediction.
-        Ns = N - k0                 # Number of usable prediction samples we can extract
-
+        k0 = max(NA, NUM_STEER_TERMS)   # Minimum number of time steps we need to skip at the beginning of each route so that we have enough past history for every prediction.
+        Ns = N - k0                     # Number of usable prediction samples we can extract
         if Ns <= 0:
             continue
 
@@ -175,25 +181,25 @@ def build_regression(files):
                                             # Each row = one usable time step
                                             # Each column = one "feature" (a lagged value multiplied by one part of the LPV basis)
                                             # Partial one row example: ay[k-1] × [1, v[k], v[k]²], ay[k-2] × [1, v[k], v[k]²], delta[k-1] × [1, v[k], v[k]²], ...
-
-        v_lpv = lpv(v[k0:])                 # Matrix that holds the LPV basis values for each time step. In our case: (1, v, v**2). (Ns,3)
+        
+        v_lpv = lpv(v[k0:])                 # Matrix that holds the LPV basis values for each time step. For example, with BASIS_DIM = 3: (1, v, v**2). (Ns,3)
 
         col = 0
 
-        # ---- AR terms ----
+        # ---- AR terms (past ay) ----
         for i_lag in range(1, NA + 1):
             ay_lag = ay[k0 - i_lag : N - i_lag]
             phi[:, col:col+BASIS_DIM] = v_lpv * ay_lag[:, None]
             col += BASIS_DIM
 
-        # ---- Steering terms ----
-        for d_lag in range(1, NDELTA + 1):
-            steer_lag = steer[k0 - d_lag : N - d_lag]
-            phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
-            col += BASIS_DIM
+        # ---- Current steer only ----
+        steer_current = steer[k0 : N]
+        phi[:, col:col+BASIS_DIM] = v_lpv * steer_current[:, None]
+        col += BASIS_DIM
 
-        # ---- Exogenous inputs ----
-        for z in (v[k0:], a[k0:], roll[k0:]):
+        # ---- Dynamic exogenous inputs ----
+        for exo_col in EXO_VARS:
+            z = df[exo_col].values[valid_mask][k0:]
             phi[:, col:col+BASIS_DIM] = v_lpv * z[:, None]
             col += BASIS_DIM
 
@@ -225,22 +231,23 @@ def build_regression(files):
 
 def constrained_ridge_regression(X, y, lam=1e-4):
     """
-    Fit with ridge + non-negativity on steering coefficients only.
+    Fit with ridge + non-negativity on steering coefficients only.    
     """
     n = X.shape[1]
     
     # Calculate indices dynamically
-    ar_end = NA * BASIS_DIM                    # end of AR part
+    ar_end      = NA * BASIS_DIM                    # end of AR (past ay) part
     steer_start = ar_end
-    steer_end = steer_start + NDELTA * BASIS_DIM   # end of steering part
+    steer_end   = steer_start + NUM_STEER_TERMS * BASIS_DIM   # end of steering part
     
     lb = np.full(n, -np.inf)
     ub = np.full(n,  np.inf)
     
-    # Force only steering coefficients >= 0 (physically meaningful gain)
-    lb[steer_start:steer_end] = 0.0
+    # Force steering coefficients >= 0 (physically meaningful gain). Avoiding this constraint for now.
+    # if NUM_STEER_TERMS > 0:
+    #     lb[steer_start:steer_end] = 0.0
 
-    # Augmented ridge
+    # Augmented system for ridge regularization
     sqrt_lam = np.sqrt(lam)
     X_aug = np.vstack([X, sqrt_lam * np.eye(n)])
     y_aug = np.concatenate([y, np.zeros(n)])
@@ -257,12 +264,12 @@ def constrained_ridge_regression(X, y, lam=1e-4):
     
     return res.x
 
-
 # ============================
 # Sim vs Meas plot
 # ============================
-def plot_simulation_on_file(theta, file_path, na=NA, ndelta=NDELTA):
-    """Plot actual vs simulated ay for one specific file"""
+def plot_simulation_on_file(theta, file_path, na=NA):
+    """Plot actual vs simulated ay for one specific file"""    
+    
     df = pd.read_csv(file_path)
     
     ay    = df["current_lataccel"].values
@@ -288,40 +295,44 @@ def plot_simulation_on_file(theta, file_path, na=NA, ndelta=NDELTA):
     a     = a[valid_mask]
     roll  = roll[valid_mask]
 
-    if len(ay) < max(na, ndelta) + 50:
+    if len(ay) < na + 50:
         print(f"File too short after filtering: {len(ay)} steps")
         return
 
     # Simulate
     y_sim = np.zeros(len(ay))
-    y_sim[:max(na, ndelta)] = ay[:max(na, ndelta)]  # warm-up with real values    
+    y_sim[:na] = ay[:na]
 
-    for k in range(max(na, ndelta), len(ay)):
+    for k in range(na, len(ay)):
         pred = 0.0
         col = 0
+        v_lpv = lpv(np.array([v[k]]))[0]
 
-        v_now = v[k]
-        v_lpv = lpv(np.array([v_now]))[0]  # (3,)
-
-        # past ay
+        # Past ay
         for i in range(1, na + 1):
             pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * ay[k - i]
             col += BASIS_DIM
 
-        # past steer
-        for d in range(1, ndelta + 1):
-            pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * steer[k - d]
-            col += BASIS_DIM
+        # Current steer
+        pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * steer[k]
+        col += BASIS_DIM
 
-        # exogenous
-        for z in [v[k], a[k], roll[k]]:
-            pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * z
+        # Exogenous
+        for exo_name in EXO_VARS:
+            if exo_name == "vEgo":
+                z_val = v[k]
+            elif exo_name == "aEgo":
+                z_val = a[k]
+            elif exo_name == "roll":
+                z_val = roll[k]
+            else:
+                z_val = 0.0
+            pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * z_val
             col += BASIS_DIM
 
         y_sim[k] = pred
 
     # Plot
-    import matplotlib.pyplot as plt
     plt.figure(figsize=(12, 6))
     plt.plot(y_sim[1:], label='Simulated (shifted forward 1)', linestyle='--', color='red')
     plt.plot(ay[:-1], label='Actual ay (shifted back 1)', alpha=0.7)
@@ -351,31 +362,27 @@ if __name__ == "__main__":
     theta = constrained_ridge_regression(X, y, LAMBDA_RIDGE)
 
     print("\n=== Learned Parameters (theta) ===")
-    print(f"Total number of parameters: {len(theta)}")
-    print(f"BASIS_DIM = {BASIS_DIM} → FEATURE_DIM = {FEATURE_DIM}")
+    print(f"NA={NA} | Steer terms=1 (current only) | Exo={EXO_VARS} | BASIS_DIM={BASIS_DIM}")
+    print(f"Total parameters: {len(theta)}")
 
-    basis_names = ["const", "v", "v²"][:BASIS_DIM]
+    basis_names = ["const"][:BASIS_DIM]   # since BASIS_DIM=1
     col = 0
 
-    # AR terms
     print("\nPast ay lags:")
     for lag in range(1, NA + 1):
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  ay_{lag}:   " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
+        print(f"  ay_{lag}: {coeffs[0]:12.6f}")
         col += BASIS_DIM
 
-    # Steering terms
-    print("\nPast steer lags:")
-    for lag in range(1, NDELTA + 1):
-        coeffs = theta[col:col + BASIS_DIM]
-        print(f"  delta_{lag}: " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
-        col += BASIS_DIM
+    print("\nCurrent steer:")
+    coeffs = theta[col:col + BASIS_DIM]
+    print(f"  steer[k]: {coeffs[0]:12.6f}")
+    col += BASIS_DIM
 
-    # Exogenous
-    print("\nExogenous inputs:")
-    for name in ["current vEgo", "aEgo", "roll"]:
+    print("\nExogenous:")
+    for name in EXO_VARS:
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  {name:12}: " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
+        print(f"  {name:12}: {coeffs[0]:12.6f}")
         col += BASIS_DIM
 
     print("\nConstant term (intercept):", theta[0])    
@@ -388,4 +395,4 @@ if __name__ == "__main__":
 
     # Pick one or more files you want to visualize
     example_file = "data_excitation/00000_excitation_step_pos.csv"   # change to any valid route
-    plot_simulation_on_file(theta, example_file)
+    plot_simulation_on_file(theta, example_file, NA)
