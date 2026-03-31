@@ -43,7 +43,7 @@ LAMBDA_RIDGE = 1e-4     # Small penalty to prevent overfitting (higher = simpler
 
 NA = 2                  # Use 2 past ay values
 NDELTA = 3              # Use 3 past steering commands (Observed sample delay)
-BASIS_DIM = 3           # number of basis functions per regressor (const + v + v²)
+BASIS_DIM = 2           # number of basis functions per regressor (const + v + v²)
 NUM_EXO_VAR = 3         # number of exogenous inputs (vEgo, aEgo, roll)
 
 FEATURE_DIM = BASIS_DIM * (NA + NDELTA + NUM_EXO_VAR)   # Total columns in the feature matrix.
@@ -69,7 +69,14 @@ def lpv(v):
     Logic: Each regressor (past ay, steer, exogenous) is multiplied by this basis
     to create speed-varying coefficients. Quadratic term captures v² physics in turning.
     """
-    return np.stack([np.ones_like(v), v, v**2], axis=1)  # (N,3)
+    if BASIS_DIM == 1:
+        return np.ones((len(v), 1))
+    elif BASIS_DIM == 2:
+        return np.stack([np.ones_like(v), v], axis=1)
+    elif BASIS_DIM == 3:
+        return np.stack([np.ones_like(v), v, v**2], axis=1)
+    else:
+        raise ValueError(f"Unsupported BASIS_DIM: {BASIS_DIM}")
 
 
 # ============================
@@ -222,37 +229,31 @@ def constrained_ridge_regression(X, y, lam=1e-4):
     """
     n = X.shape[1]
     
-    # Indices of steering coefficients:
-    #   AR part:          0  →  5  (6 cols)
-    #   Steering part:    6  → 14  (9 cols)  ← these must be >= 0
-    #   Exogenous part:  15 → 23  (9 cols)
+    # Calculate indices dynamically
+    ar_end = NA * BASIS_DIM                    # end of AR part
+    steer_start = ar_end
+    steer_end = steer_start + NDELTA * BASIS_DIM   # end of steering part
     
-    lb = np.full(n, -np.inf)           # default: free (negative allowed)
+    lb = np.full(n, -np.inf)
     ub = np.full(n,  np.inf)
     
-    # Force steering coefficients >= 0
-    lb[6:15] = 0.0                     # ← this is the key line
-    
-    # Optional: small ridge regularization can still be added via modified objective,
-    # but lsq_linear doesn't directly support ridge → we add it approximately via
-    # augmented system (common trick)
-    
-    # Augmented system for ridge: [X; sqrt(lam)*I]  and  [y; 0]
+    # Force only steering coefficients >= 0 (physically meaningful gain)
+    lb[steer_start:steer_end] = 0.0
+
+    # Augmented ridge
     sqrt_lam = np.sqrt(lam)
     X_aug = np.vstack([X, sqrt_lam * np.eye(n)])
     y_aug = np.concatenate([y, np.zeros(n)])
     
     res = lsq_linear(
-        X_aug,
-        y_aug,
+        X_aug, y_aug,
         bounds=(lb, ub),
-        method='trf',              # trust-region reflective handles bounds well
-        verbose=1                  # shows solver progress
+        method='trf',
+        verbose=1
     )
     
     if not res.success:
-        print("Warning: lsq_linear did not converge perfectly")
-        print(res.message)
+        print("Warning:", res.message)
     
     return res.x
 
@@ -351,38 +352,30 @@ if __name__ == "__main__":
 
     print("\n=== Learned Parameters (theta) ===")
     print(f"Total number of parameters: {len(theta)}")
+    print(f"BASIS_DIM = {BASIS_DIM} → FEATURE_DIM = {FEATURE_DIM}")
 
-    # Group them nicely
-    basis_names = ["const", "v", "v²"]
-
-    print("\nCoefficients grouped by regressor type:")
+    basis_names = ["const", "v", "v²"][:BASIS_DIM]
     col = 0
 
-    # AR terms (past ay)
-    print("Past ay lags:")
+    # AR terms
+    print("\nPast ay lags:")
     for lag in range(1, NA + 1):
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  ay_{lag}:   {basis_names[0]:<6} {coeffs[0]:12.6f}   "
-            f"{basis_names[1]:<6} {coeffs[1]:12.6f}   "
-            f"{basis_names[2]:<6} {coeffs[2]:12.6f}")
+        print(f"  ay_{lag}:   " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
         col += BASIS_DIM
 
     # Steering terms
     print("\nPast steer lags:")
     for lag in range(1, NDELTA + 1):
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  delta_{lag}: {basis_names[0]:<6} {coeffs[0]:12.6f}   "
-            f"{basis_names[1]:<6} {coeffs[1]:12.6f}   "
-            f"{basis_names[2]:<6} {coeffs[2]:12.6f}")
+        print(f"  delta_{lag}: " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
         col += BASIS_DIM
 
-    # Exogenous (v, a, roll)
+    # Exogenous
     print("\nExogenous inputs:")
     for name in ["current vEgo", "aEgo", "roll"]:
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  {name:12}: {basis_names[0]:<6} {coeffs[0]:12.6f}   "
-            f"{basis_names[1]:<6} {coeffs[1]:12.6f}   "
-            f"{basis_names[2]:<6} {coeffs[2]:12.6f}")
+        print(f"  {name:12}: " + "   ".join([f"{name:<6} {c:12.6f}" for name, c in zip(basis_names, coeffs)]))
         col += BASIS_DIM
 
     print("\nConstant term (intercept):", theta[0])    
@@ -394,5 +387,5 @@ if __name__ == "__main__":
 
 
     # Pick one or more files you want to visualize
-    example_file = "data_excitation/00019_excitation_step.csv"   # change to any valid route
+    example_file = "data_excitation/00000_excitation_step_pos.csv"   # change to any valid route
     plot_simulation_on_file(theta, example_file)
