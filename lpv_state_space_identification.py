@@ -7,6 +7,8 @@ kappa_{k+1} = kappa_k + dt * kappa_dot_k
 kappa_dot_{k+1} = a(v)*kappa_dot_k + b(v)*delta_k
 
 a(v), b(v) use configurable LPV basis
+
+Didn't work well.
 """
 
 import numpy as np
