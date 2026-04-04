@@ -2,179 +2,198 @@ from . import BaseController
 import numpy as np
 import scipy.optimize as opt
 
-def predict_next_lataccel(state, steer, zeta, theta):
-    ay, ay_prev, d1, d2, d3, _ = state
-    v, a, roll = zeta
 
-    basis = np.array([1.0, v, v * v])
+# ============================
+# LPV basis (dynamic)
+# ============================
+
+def build_basis(v, BASIS_DIM):
+    if BASIS_DIM == 1:
+        return np.array([1.0])
+    elif BASIS_DIM == 2:
+        return np.array([1.0, v])
+    elif BASIS_DIM == 3:
+        return np.array([1.0, v, v * v])
+    else:
+        raise ValueError("Unsupported BASIS_DIM")
+
+
+# ============================
+# Dynamic predictor
+# ============================
+
+def predict_next_lataccel(state, steer, zeta, model):
+    theta = model["theta"]
+    NA = model["NA"]
+    NUM_STEER_TERMS = model["NUM_STEER_TERMS"]
+    BASIS_DIM = model["BASIS_DIM"]
+    EXO_VARS = model["EXO_VARS"]
+
+    ay_hist = state["ay_hist"]
+    steer_hist = state["steer_hist"]
+
+    v = zeta["vEgo"]
+    basis = build_basis(v, BASIS_DIM)
 
     col = 0
+    ay_pred = 0.0
 
-    # AR
-    ay_pred = (
-        np.dot(basis, theta[col:col+3]) * ay +
-        np.dot(basis, theta[col+3:col+6]) * ay_prev
-    )
-    col += 6
+    # ---- AR terms ----
+    for i in range(NA):
+        ay_pred += np.dot(basis, theta[col:col+BASIS_DIM]) * ay_hist[-(i+1)]
+        col += BASIS_DIM
 
-    # Input delays
-    ay_pred += (
-        np.dot(basis, theta[col:col+3]) * d1 +
-        np.dot(basis, theta[col+3:col+6]) * d2 +
-        np.dot(basis, theta[col+6:col+9]) * d3
-    )
-    col += 9
+    # ---- Steering terms ----
+    for d in range(NUM_STEER_TERMS):
+        if d == 0:
+            u = steer
+        else:
+            u = steer_hist[-d]
+        ay_pred += np.dot(basis, theta[col:col+BASIS_DIM]) * u
+        col += BASIS_DIM
 
-    # Exogenous
-    ay_pred += (
-        np.dot(basis, theta[col:col+3]) * v +
-        np.dot(basis, theta[col+3:col+6]) * a +
-        np.dot(basis, theta[col+6:col+9]) * roll
-    )
+    # ---- Exogenous ----
+    for name in EXO_VARS:
+        val = zeta.get(name, 0.0)
+        ay_pred += np.dot(basis, theta[col:col+BASIS_DIM]) * val
+        col += BASIS_DIM
 
     return ay_pred
 
 
+# ============================
+# Controller
+# ============================
+
 class Controller(BaseController):
     def __init__(self):
-        self.theta = np.load("lpv_arx_theta.npy")
+        data = np.load("lpv_arx_model.npz", allow_pickle=True)
 
-        self.prev_ay = 0.0
-        self.steer_hist = [0.0, 0.0, 0.0]
+        self.model = {
+            "theta": data["theta"],
+            "NA": int(data["NA"]),
+            "NUM_STEER_TERMS": int(data["NUM_STEER_TERMS"]),
+            "BASIS_DIM": int(data["BASIS_DIM"]),
+            "EXO_VARS": list(data["EXO_VARS"])
+        }
+
+        # histories
+        self.ay_hist = [0.0] * self.model["NA"]
+        self.steer_hist = [0.0] * self.model["NUM_STEER_TERMS"]
 
         self.step_idx = 0
 
-        # MPC parameters
-        self.N = 5
-        self.steer_candidates = np.linspace(-1, 1, 101)
-        self.lambda_u = 1.0
-        self.last_u_seq = None          # warm-start for optimizer       
+        # MPC params
+        self.N = 10
+        self.lambda_u = 10.0   # ↑ increase to reduce oscillations
+        self.last_u_seq = None
 
         with open("mpc_log.txt", "w") as f:
-            f.write("step,ay,ay_ref,steer,ay_pred\n")  # header        
+            f.write("step,ay,ay_ref,steer,ay_pred\n")
 
-    def simulate_rollout(self, x, future_zetas, u_seq, target):
+
+    def simulate_rollout(self, future_zetas, u_seq, future_targets):
         cost = 0.0
 
-        # Safety guard
-        horizon = min(len(u_seq), len(future_zetas))
-        if horizon == 0:
-            return 0.0
+        ay_hist = self.ay_hist.copy()
+        steer_hist = self.steer_hist.copy()
 
-        u_seq = u_seq[:horizon]
-
-        steer_hist = [x[4], x[3], x[2]]   # oldest, mid, newest
-        ay = x[0]
-        ay_prev = x[1]
-
-        for k in range(horizon):
+        for k in range(len(u_seq)):
             u = u_seq[k]
 
-            state = np.array([
-                ay,
-                ay_prev,
-                steer_hist[-1],             # Newest     
-                steer_hist[-2],
-                steer_hist[-3],             # Oldest
-                0.0
-            ])
-
             zeta_k = future_zetas[k]
-            ay_pred = predict_next_lataccel(state, u, zeta_k, self.theta)
 
-            cost += (ay_pred - target) ** 2
+            state = {
+                "ay_hist": ay_hist,
+                "steer_hist": steer_hist
+            }
+
+            ay_pred = predict_next_lataccel(state, u, zeta_k, self.model)
+
+            # cost
+            target_k = future_targets[k]
+            cost += (ay_pred - target_k) ** 2
+
             if k > 0:
                 cost += self.lambda_u * (u - u_seq[k-1]) ** 2
 
-            ay_prev = ay
-            ay = ay_pred
-            steer_hist.append(u)
-            steer_hist = steer_hist[-3:]
+            # update histories
+            ay_hist.append(ay_pred)
+            ay_hist = ay_hist[-self.model["NA"]:]
 
-        # Terminal cost
-        cost += 10.0 * (ay - target) ** 2
+            steer_hist.append(u)
+            steer_hist = steer_hist[-self.model["NUM_STEER_TERMS"]:]
+
+        cost += 10.0 * (ay_hist[-1] - future_targets[-1]) ** 2
 
         return cost
 
+
     def update(self, target_lataccel, current_lataccel, state, future_plan):
 
-        # initial state
-        x0 = np.array([
-            current_lataccel,
-            self.prev_ay,
-            self.steer_hist[-1],
-            self.steer_hist[-2],
-            self.steer_hist[-3],
-            0.0
-        ])
+        # update ay history
+        self.ay_hist.append(current_lataccel)
+        self.ay_hist = self.ay_hist[-self.model["NA"]:]
 
-        # === SAFE horizon handling (fixes both previous IndexError and this new bounds error) ===
-        N = self.N
         v_ego = np.asarray(future_plan.v_ego)
         a_ego = np.asarray(future_plan.a_ego)
-        roll   = np.asarray(future_plan.roll_lataccel)
+        roll  = np.asarray(future_plan.roll_lataccel)
+        lataccel_ref = np.asarray(future_plan.lataccel)
 
-        actual_horizon = min(N, len(v_ego))
+        horizon = min(self.N, len(v_ego), len(lataccel_ref))
+        future_targets = lataccel_ref[:horizon]        
 
-        if actual_horizon == 0:
-            # End of route: just return last steer or 0
-            steer = self.steer_hist[-1] if self.steer_hist else 0.0
+        if horizon == 0:
+            return self.steer_hist[-1] if self.steer_hist else 0.0
+
+        future_zetas = []
+        for i in range(horizon):
+            z = {
+                "vEgo": v_ego[i],
+                "aEgo": a_ego[i] if len(a_ego) > i else 0.0,
+                "roll": roll[i] if len(roll) > i else 0.0
+            }
+            future_zetas.append(z)
+
+        # warm start
+        if self.last_u_seq is None or len(self.last_u_seq) != horizon:
+            u0 = np.zeros(horizon)
         else:
-            future_zetas = np.column_stack((
-                v_ego[:actual_horizon],
-                a_ego[:actual_horizon],
-                roll[:actual_horizon]
-            ))  # shape (actual_horizon, 3)
+            u0 = self.last_u_seq[:horizon]
 
-            def mpc_cost(u_vec: np.ndarray) -> float:
-                return self.simulate_rollout(x0, future_zetas, u_vec.tolist(), target_lataccel)
+        def cost(u_vec):
+            return self.simulate_rollout(future_zetas, u_vec.tolist(), future_targets)
 
-            # warm-start
-            if self.last_u_seq is None or len(self.last_u_seq) != actual_horizon:
-                u0_guess = np.zeros(actual_horizon)
-            else:
-                u0_guess = self.last_u_seq[:actual_horizon].copy()
+        res = opt.minimize(
+            cost,
+            x0=u0,
+            bounds=[(-1, 1)] * horizon,
+            method='L-BFGS-B'
+        )
 
-            res = opt.minimize(
-                mpc_cost,
-                x0=u0_guess,
-                bounds=[(-1.0, 1.0)] * actual_horizon,
-                method='L-BFGS-B',
-                options={'maxiter': 100, 'disp': False}
-            )
-
-            if res.success:
-                u_seq_opt = res.x
-                steer = float(u_seq_opt[0])          # apply only first move
-                self.last_u_seq = u_seq_opt          # save for next warm-start
-            else:
-                steer = 0.0
-
-        # logging — safe even when horizon==0
-        if actual_horizon > 0:
-            zeta0 = future_zetas[0]
+        if res.success:
+            u_seq = res.x
+            steer = float(u_seq[0])
+            self.last_u_seq = u_seq
         else:
-            # fallback zeta when no future data
-            zeta0 = np.array([
-                future_plan.v_ego[-1] if len(future_plan.v_ego) > 0 else 0.0,
-                future_plan.a_ego[-1] if len(future_plan.a_ego) > 0 else 0.0,
-                future_plan.roll_lataccel[-1] if len(future_plan.roll_lataccel) > 0 else 0.0
-            ])
-        ay_pred = predict_next_lataccel(x0, steer, zeta0, self.theta)
+            steer = 0.0
+
+        # log
+        z0 = future_zetas[0]
+        state_now = {
+            "ay_hist": self.ay_hist,
+            "steer_hist": self.steer_hist
+        }
+
+        ay_pred = predict_next_lataccel(state_now, steer, z0, self.model)
 
         with open("mpc_log.txt", "a") as f:
-            f.write(
-                f"{self.step_idx},"
-                f"{current_lataccel},"
-                f"{target_lataccel},"
-                f"{steer},"
-                f"{ay_pred}\n"
-            )
+            f.write(f"{self.step_idx},{current_lataccel},{target_lataccel},{steer},{ay_pred}\n")
 
-        # update history
-        self.prev_ay = current_lataccel
+        # update steer history
         self.steer_hist.append(steer)
-        self.steer_hist = self.steer_hist[-3:]
+        self.steer_hist = self.steer_hist[-self.model["NUM_STEER_TERMS"]:]
+
         self.step_idx += 1
 
         return steer
