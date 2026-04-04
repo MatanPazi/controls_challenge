@@ -42,12 +42,12 @@ DATA_DIR = Path("data_excitation")
 MAX_ROUTES = 1000
 LAMBDA_RIDGE = 1e-4         # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 1                      # Use 1 past ay values
-NUM_STEER_TERMS = 1         # Only current steer (Assumes lag = 0)
+NA = 2                      # Use 1 past ay values
+NUM_STEER_TERMS = 2         # Only current steer (Assumes lag = 0)
 BASIS_DIM = 1               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
-EXO_VARS = ['vEgo', 'roll']             # Change as needed, examples:
+EXO_VARS = ['roll']             # Change as needed, examples:
                                         # ["vEgo"] 
                                         # ["vEgo", "roll"]
                                         # ["vEgo", "aEgo"]
@@ -57,7 +57,7 @@ FEATURE_DIM = BASIS_DIM * (NA + NUM_STEER_TERMS + len(EXO_VARS))    # Total colu
                                                                     # Each regressor (past ay, steer, exogenous) gets BASIS_DIM basis terms (1, v, v²)
                                                                     # So 1 * (1 + 1 + 2) = 4 total parameters.
 
-MIN_SPEED = 3.0
+MIN_SPEED = 1.0
 
 # ============================
 # LPV basis
@@ -192,10 +192,11 @@ def build_regression(files):
             phi[:, col:col+BASIS_DIM] = v_lpv * ay_lag[:, None]
             col += BASIS_DIM
 
-        # ---- Current steer only ----
-        steer_current = steer[k0 : N]
-        phi[:, col:col+BASIS_DIM] = v_lpv * steer_current[:, None]
-        col += BASIS_DIM
+        # ---- Steering terms (current + past) ----
+        for d_lag in range(NUM_STEER_TERMS):
+            steer_lag = steer[k0 - d_lag : N - d_lag]
+            phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
+            col += BASIS_DIM
 
         # ---- Dynamic exogenous inputs ----
         for exo_col in EXO_VARS:
@@ -295,15 +296,16 @@ def plot_simulation_on_file(theta, file_path, na=NA):
     a     = a[valid_mask]
     roll  = roll[valid_mask]
 
-    if len(ay) < na + 50:
+    k0 = max(na, NUM_STEER_TERMS - 1)
+    if len(ay) < k0 + 50:    
         print(f"File too short after filtering: {len(ay)} steps")
         return
 
     # Simulate
     y_sim = np.zeros(len(ay))
-    y_sim[:na] = ay[:na]
+    y_sim[:k0] = ay[:k0]
 
-    for k in range(na, len(ay)):
+    for k in range(k0, len(ay)):
         pred = 0.0
         col = 0
         v_lpv = lpv(np.array([v[k]]))[0]
@@ -313,9 +315,10 @@ def plot_simulation_on_file(theta, file_path, na=NA):
             pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * ay[k - i]
             col += BASIS_DIM
 
-        # Current steer
-        pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * steer[k]
-        col += BASIS_DIM
+        # Steering terms (current + past)
+        for d in range(NUM_STEER_TERMS):
+            pred += np.dot(v_lpv, theta[col:col+BASIS_DIM]) * steer[max(0, k - d)]
+            col += BASIS_DIM
 
         # Exogenous
         for exo_name in EXO_VARS:
@@ -362,37 +365,62 @@ if __name__ == "__main__":
     theta = constrained_ridge_regression(X, y, LAMBDA_RIDGE)
 
     print("\n=== Learned Parameters (theta) ===")
-    print(f"NA={NA} | Steer terms=1 (current only) | Exo={EXO_VARS} | BASIS_DIM={BASIS_DIM}")
+    print(f"NA={NA} | Steer terms={NUM_STEER_TERMS} | Exo={EXO_VARS} | BASIS_DIM={BASIS_DIM}")
     print(f"Total parameters: {len(theta)}")
 
-    basis_names = ["const"][:BASIS_DIM]   # since BASIS_DIM=1
+    if BASIS_DIM == 1:
+        basis_names = ["1"]
+    elif BASIS_DIM == 2:
+        basis_names = ["1", "v"]
+    elif BASIS_DIM == 3:
+        basis_names = ["1", "v", "v^2"]
+    else:
+        raise ValueError("Unsupported BASIS_DIM")
     col = 0
 
     print("\nPast ay lags:")
     for lag in range(1, NA + 1):
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  ay_{lag}: {coeffs[0]:12.6f}")
+        terms = " + ".join(
+            [f"{coeffs[i]:.6f}*{basis_names[i]}" for i in range(BASIS_DIM)]
+        )
+        print(f"  ay_{lag}: {terms}")
         col += BASIS_DIM
 
-    print("\nCurrent steer:")
-    coeffs = theta[col:col + BASIS_DIM]
-    print(f"  steer[k]: {coeffs[0]:12.6f}")
-    col += BASIS_DIM
+    print("\nSteering terms:")
+    for d in range(NUM_STEER_TERMS):
+        coeffs = theta[col:col + BASIS_DIM]
+        terms = " + ".join(
+            [f"{coeffs[i]:.6f}*{basis_names[i]}" for i in range(BASIS_DIM)]
+        )
+        print(f"  steer[k-{d}]: {terms}")
+        col += BASIS_DIM
+        
 
     print("\nExogenous:")
     for name in EXO_VARS:
         coeffs = theta[col:col + BASIS_DIM]
-        print(f"  {name:12}: {coeffs[0]:12.6f}")
+        terms = " + ".join(
+            [f"{coeffs[i]:.6f}*{basis_names[i]}" for i in range(BASIS_DIM)]
+        )
+        print(f"  {name:12}: {terms}")
         col += BASIS_DIM
 
     print("\nConstant term (intercept):", theta[0])    
 
-    np.save("lpv_arx_theta.npy", theta)
+    np.savez(
+        "lpv_arx_model.npz",
+        theta=theta,
+        NA=NA,
+        NUM_STEER_TERMS=NUM_STEER_TERMS,
+        BASIS_DIM=BASIS_DIM,
+        EXO_VARS=np.array(EXO_VARS)
+    )
 
     rmse = np.sqrt(np.mean((X @ theta - y) ** 2))
     print(f"One-step RMSE: {rmse:.4f} m/s²")
 
 
     # Pick one or more files you want to visualize
-    example_file = "data_excitation/00000_excitation_step.csv"   # change to any valid route
+    example_file = "data_excitation/00010_excitation_sine.csv"   # change to any valid route
     plot_simulation_on_file(theta, example_file, NA)
