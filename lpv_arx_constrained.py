@@ -39,12 +39,12 @@ from scipy.optimize import lsq_linear
 # ============================
 
 DATA_DIR = Path("data_excitation")
-MAX_ROUTES = 1000
-LAMBDA_RIDGE = 1e-4         # Small penalty to prevent overfitting (higher = simpler model).
+MAX_ROUTES = 200
+LAMBDA_RIDGE = 1e-2         # Small penalty to prevent overfitting (higher = simpler model).
 
 NA = 2                      # Use 1 past ay values
-NUM_STEER_TERMS = 2         # Only current steer (Assumes lag = 0)
-BASIS_DIM = 1               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
+NUM_STEER_TERMS = 6         # Only current steer (Assumes lag = 0)
+BASIS_DIM = 3               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
 EXO_VARS = ['roll']             # Change as needed, examples:
