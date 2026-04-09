@@ -84,8 +84,8 @@ class Controller(BaseController):
         self.step_idx = 0
 
         # MPC params
-        self.N = 10
-        self.lambda_u = 10.0   # ↑ increase to reduce oscillations
+        self.N = 12
+        self.lambda_u = 12.0   # ↑ increase to reduce oscillations
         self.last_u_seq = None
 
         with open("mpc_log.txt", "w") as f:
