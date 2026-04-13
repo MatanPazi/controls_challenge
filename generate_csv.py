@@ -13,7 +13,7 @@ MODEL_PATH = "models/tinyphysics.onnx"
 MAX_STEPS = 600
 
 # Base CSVs to use. Automatically take first N files from data/ folder
-N_BASES = 50
+N_BASES = 100
 all_csvs = sorted(Path("data").glob("*.csv"))  # finds 00000.csv, 00001.csv, …
 BASE_CSVS = [str(p) for p in all_csvs[:N_BASES]]
 
