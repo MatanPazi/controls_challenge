@@ -34,10 +34,12 @@ class Controller(BaseController):
         }
 
         # MPC Hyperparameters
-        self.N = 14           # Horizon steps
-        self.weight_y = 12.0    # Tracking error weight
+        self.N = 11           # Horizon steps
+        self.weight_y = 15.0    # Tracking error weight
         self.weight_u = 0.0    # Absolute steering magnitude penalty
         self.weight_du = 25.0  # Slew rate penalty (CRITICAL for stability)
+        self.weight_terminal = 100.0  # ← NEW & IMPORTANT
+
 
         # Histories
         self.ay_hist = [0.0] * self.model["NA"]
@@ -145,6 +147,10 @@ class Controller(BaseController):
         # q vector
         q = 2 * (G.T @ (f - y_ref[:N]) * self.weight_y - 
                  (D.T @ d_prev) * self.weight_du)
+
+        # Strong terminal cost
+        P[-1, -1] += 2 * self.weight_terminal
+        q[-1] += -2 * self.weight_terminal * y_ref[N-1]
 
         # 5. Solve QP
         prob = osqp.OSQP()
