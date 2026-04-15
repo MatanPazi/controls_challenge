@@ -39,7 +39,8 @@ class Controller(BaseController):
         self.weight_u = 0.0    # Absolute steering magnitude penalty
         self.weight_du = 25.0  # Slew rate penalty (CRITICAL for stability)
         self.weight_terminal = 100.0  # ← NEW & IMPORTANT
-
+        self.fb_integral = 0.0
+        self.steer_filt = 0.0
 
         # Histories
         self.ay_hist = [0.0] * self.model["NA"]
@@ -47,6 +48,10 @@ class Controller(BaseController):
         
         self.step_idx = 0
         self.last_u_seq = None
+
+        # === Create log file with headers ===
+        with open("mpc_log.txt", "w") as f:
+            f.write("step,ay,ay_ref,steer,ay_pred\n")   # ← This is what was missing        
 
     def predict_step(self, ay_h, steer_val, steer_h, zeta):
         """Pure function to predict next ay based on provided history buffers."""
@@ -73,7 +78,7 @@ class Controller(BaseController):
             val = zeta.get(name, 0.0)
             pred += np.dot(basis, theta[col:col+BD]) * val
             col += BD
-            
+        
         return pred
 
     def update(self, target_lataccel, current_lataccel, state, future_plan):
@@ -141,12 +146,12 @@ class Controller(BaseController):
         d_prev[0] = self.steer_hist[-1] # Initial condition for slew rate
 
         P = 2 * (G.T @ G * self.weight_y + 
-                 sparse.eye(N) * self.weight_u + 
-                 D.T @ D * self.weight_du)
+                sparse.eye(N) * self.weight_u + 
+                D.T @ D * self.weight_du)
         
         # q vector
         q = 2 * (G.T @ (f - y_ref[:N]) * self.weight_y - 
-                 (D.T @ d_prev) * self.weight_du)
+                (D.T @ d_prev) * self.weight_du)
 
         # Strong terminal cost
         P[-1, -1] += 2 * self.weight_terminal
@@ -168,13 +173,35 @@ class Controller(BaseController):
 
         if res.info.status == 'solved':
             self.last_u_seq = res.x
-            steer = float(res.x[0])
+            steer_mpc = float(res.x[0])
         else:
-            steer = self.steer_hist[-1] # Fallback to previous
+            steer_mpc = self.steer_hist[-1] # Fallback to previous
+
+        # Predict current ay using model
+        ay_pred = self.predict_step(
+            self.ay_hist,
+            steer_mpc,
+            self.steer_hist,
+            zetas[0]
+        )
+
+        error = target_lataccel - current_lataccel            
+
+        Ki = 0.03   # start small (0.1–0.5)
+
+        self.fb_integral += Ki * error
+
+        steer = steer_mpc + self.fb_integral
+
+        # Logging (now shows corrected command)
+        with open("mpc_log.txt", "a") as f:
+            f.write(f"{self.step_idx},{current_lataccel},{target_lataccel},{steer},{ay_pred}\n")        
 
         # 6. Update history and return
         self.steer_hist.append(steer)
         self.steer_hist = self.steer_hist[-self.model["NB"]:]
+        alpha = 0.5
+        self.steer_filt = (1 - alpha) * self.steer_filt + alpha * steer                    
         self.step_idx += 1
-        
-        return steer
+
+        return self.steer_filt
