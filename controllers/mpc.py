@@ -2,18 +2,23 @@ from . import BaseController
 import numpy as np
 import osqp
 from scipy import sparse
+from lpv_arx_constrained2 import MIN_SPEED
+
 
 # ============================
 # LPV basis
 # ============================
 
 def build_basis(v, BASIS_DIM):
+    v_safe = np.clip(v, MIN_SPEED, None)
     if BASIS_DIM == 1:
         return np.array([1.0])
     elif BASIS_DIM == 2:
         return np.array([1.0, v])
     elif BASIS_DIM == 3:
-        return np.array([1.0, v, v * v])
+        return np.array([1.0, v, 1.0/v_safe])
+    elif BASIS_DIM == 4:
+        return np.array([1.0, v, 1.0/v_safe, v**2])    
     else:
         raise ValueError("Unsupported BASIS_DIM")
 
