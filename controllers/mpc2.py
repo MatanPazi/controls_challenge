@@ -208,8 +208,8 @@ class Controller(BaseController):
         # 6. Update history and return
         self.steer_hist.append(steer)
         self.steer_hist = self.steer_hist[-self.model["NB"]:]
-        alpha = 0.5
-        self.steer_filt = (1 - alpha) * self.steer_filt + alpha * steer                    
+        # alpha = 0.5
+        # self.steer_filt = (1 - alpha) * self.steer_filt + alpha * steer                    
 
         # Logging (now shows corrected command)
         with open("mpc_log.txt", "a") as f:
@@ -217,4 +217,4 @@ class Controller(BaseController):
         
         self.step_idx += 1
 
-        return self.steer_filt
+        return steer
