@@ -1,13 +1,4 @@
 """
-TODO:
-Add:
-interaction terms: u * v, u * ay, v * ay, ...
-Nonlinear AR terms: ay[k-1]^2
-Nonlinear steer features: u, u^3, |u|
-Steer[k-1] as a separate regressor with its own basis?
-...
-
-
 Nonlinear LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
 
 This script identifies a physics-informed Linear Parameter-Varying (LPV) model 
