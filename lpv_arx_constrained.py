@@ -1,4 +1,12 @@
 """
+TODO:
+Consider adding to build_regression:
+    lateral acceleration rate
+    lateral acceleration rate * steer interaction
+    curvature and curvature rate?
+    steering rate
+    steer rate * velocity interaction
+    
 LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
 
 This script fits a Linear Parameter-Varying AutoRegressive with eXogenous inputs (LPV-ARX) model 
