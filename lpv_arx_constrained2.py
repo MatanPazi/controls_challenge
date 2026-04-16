@@ -62,11 +62,11 @@ DATA_DIR = Path("data_excitation")
 MAX_ROUTES = 500
 LAMBDA_RIDGE = 0.01         # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 4                      # Use 1 past ay values
-NUM_STEER_TERMS = 2         # Only current steer (Assumes lag = 0)
+NA = 8                      # Use 1 past ay values
+NUM_STEER_TERMS = 6         # Only current steer (Assumes lag = 0)
 BASIS_DIM = 4               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
-FEATURE_DIM = (1 + NA + (NUM_STEER_TERMS * 2) + 1) * BASIS_DIM + 1  # (1 bias + NA lags + 2*Steer terms + 1 aEgo) * BASIS_DIM + 1 roll
+FEATURE_DIM = (1 + NA + (NUM_STEER_TERMS * 1) + 1) * BASIS_DIM + 1  # (1 bias + NA lags + 2*Steer terms + 1 aEgo) * BASIS_DIM + 1 roll
 
 MIN_SPEED = 1.0
 
@@ -205,10 +205,7 @@ def build_regression(files):
             steer_lag = steer[k0 - d_lag : N - d_lag]
             # Linear effect
             phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
-            col += BASIS_DIM
-            # Cubic effect (captures tire saturation/diminishing returns)
-            phi[:, col:col+BASIS_DIM] = v_lpv * (steer_lag**3)[:, None]
-            col += BASIS_DIM            
+            col += BASIS_DIM           
 
         # 4. EXOGENOUS: aEgo (Speed dependent)
         a_curr = a[k0:]
@@ -423,12 +420,6 @@ if __name__ == "__main__":
         print(f"  steer[k-{d}] Linear: {terms_l}")
         col += BASIS_DIM
         
-        # Cubic
-        coeffs_c = theta[col:col + BASIS_DIM]
-        terms_c = " + ".join([f"{coeffs_c[i]:.6f}*{basis_names[i]}" for i in range(BASIS_DIM)])
-        print(f"  steer[k-{d}] Cubic:  {terms_c}")
-        col += BASIS_DIM
-
     # 4. Exogenous: aEgo
     coeffs = theta[col:col + BASIS_DIM]
     terms = " + ".join([f"{coeffs[i]:.6f}*{basis_names[i]}" for i in range(BASIS_DIM)])
