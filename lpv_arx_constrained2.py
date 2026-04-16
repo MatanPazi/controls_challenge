@@ -1,26 +1,37 @@
 """
-LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
+Nonlinear LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
 
-This script fits a Linear Parameter-Varying AutoRegressive with eXogenous inputs (LPV-ARX) model 
-to predict the next lateral acceleration (current_lataccel) from:
-- Past lateral accelerations (NA lags)
-- Current steer command (NUM_STEER_TERMS)
-- A choice of current exogenous signals: vEgo, aEgo, roll
+This script identifies a physics-informed Linear Parameter-Varying (LPV) model 
+to predict next lateral acceleration (ay). Key improvements include:
 
-The model allows the use of a quadratic basis in vEgo (constant + linear + v²) to make coefficients speed-dependent, 
-capturing the potentially strong v² dependence in vehicle lateral dynamics.
+1. SPEED-DEPENDENT BIAS: 
+   Identifies a baseline offset (Bias = θ₀ + θ₁v + θ₂/v) to capture road crown, 
+   aerodynamic effects, and sensor offsets independently of control inputs.
+
+2. NONLINEAR STEERING (Tire Saturation):
+   Uses a Linear + Cubic steering structure (u and u³) to capture high-slip 
+   dynamics where steering effectiveness diminishes at large angles.
+
+3. PHYSICS-INFORMED BASIS [1, v, 1/v]:
+   Replaces the quadratic basis with an inverse-speed basis. This better 
+   reflects vehicle "Understeer Gradient" physics and improves numerical 
+   conditioning at high speeds.
+
+4. DYNAMIC/STATIC EXOGENOUS SPLIT:
+   - aEgo: Speed-dependent (captures longitudinal-lateral coupling).
+   - Roll: Speed-independent (captures pure gravitational lateral pull).
 
 Key steps:
-1. Loads CSV files from data folder (limited to MAX_ROUTES)
-2. For each file: filters pre-control-start data (before CONTROL_START_IDX, for original openpilot controller), 
-   removes rows with NaN/inf in key columns
-3. Builds regression matrix X by multiplying lagged values with LPV basis in vEgo (phi matrix)
-4. Fits parameters theta using ridge regression (regularized least squares)
-5. Saves theta to lpv_arx_theta.npy
-6. Reports one-step RMSE on the full dataset
-7. Plots a comparison between current_lataccel and simulated acceleration for a chosen route.
+1. Loads CSV files from data folder (limited to MAX_ROUTES).
+2. Filters data for validity (vEgo > MIN_SPEED, CONTROL_START_IDX, finite values).
+3. Builds a structured regression matrix X using the [1, v, 1/v] basis for 
+   dynamic terms and a constant basis for gravitational roll.
+4. Fits parameters theta using Ridge Regression (regularized L2) to prevent 
+   overfitting to sensor noise.
+5. Saves model and metadata to 'lpv_arx_model.npz'.
+6. Validates via One-step RMSE and full-horizon simulation plotting.
 
-Usage: Run the script -> get theta -> use in simulation/control design.
+Usage: Run script -> extract theta -> update mpc.py predict_step with new structure.
 """
 
 import numpy as np
@@ -40,9 +51,9 @@ from scipy.optimize import lsq_linear
 
 DATA_DIR = Path("data_excitation")
 MAX_ROUTES = 500
-LAMBDA_RIDGE = 0.1         # Small penalty to prevent overfitting (higher = simpler model).
+LAMBDA_RIDGE = 0.01         # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 3                      # Use 1 past ay values
+NA = 1                      # Use 1 past ay values
 NUM_STEER_TERMS = 1         # Only current steer (Assumes lag = 0)
 BASIS_DIM = 3               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
@@ -184,7 +195,7 @@ def build_regression(files):
             phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
             col += BASIS_DIM
             # Cubic effect (captures tire saturation/diminishing returns)
-            phi[:, col:col+BASIS_DIM] = v_lpv * (steer_lag**3)[:, None]
+            phi[:, col:col+BASIS_DIM] = v_lpv * (steer_lag**2)[:, None]
             col += BASIS_DIM            
 
         # 4. EXOGENOUS: aEgo (Speed dependent)
