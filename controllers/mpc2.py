@@ -38,7 +38,7 @@ class Controller(BaseController):
         self.N = 11           # Horizon steps
         self.weight_y = 15.0    # Tracking error weight
         self.weight_u = 0.0    # Absolute steering magnitude penalty
-        self.weight_du = 40.0  # Slew rate penalty (CRITICAL for stability)
+        self.weight_du = 25.0  # Slew rate penalty (CRITICAL for stability)
         self.weight_terminal = 100.0  # ← NEW & IMPORTANT
         self.fb_integral = 0.0
         self.steer_filt = 0.0
@@ -199,12 +199,9 @@ class Controller(BaseController):
 
         error = target_lataccel - current_lataccel            
 
-        Ki = 0.02   # start small (0.1–0.5)
+        Ki = 0.0   # start small (0.1–0.5)
 
-        if (self.step_idx > 80):
-            self.fb_integral += Ki * error
-        else:
-            self.fb_integral = 0
+        self.fb_integral += Ki * error
 
         steer = steer_mpc + self.fb_integral
 
