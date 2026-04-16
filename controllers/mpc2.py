@@ -64,7 +64,7 @@ LAMBDA_RIDGE = 0.01         # Small penalty to prevent overfitting (higher = sim
 
 NA = 4                      # Use 1 past ay values
 NUM_STEER_TERMS = 2         # Only current steer (Assumes lag = 0)
-BASIS_DIM = 3               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
+BASIS_DIM = 4               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 FEATURE_DIM = (1 + NA + (NUM_STEER_TERMS * 2) + 1) * BASIS_DIM + 1  # (1 bias + NA lags + 2*Steer terms + 1 aEgo) * BASIS_DIM + 1 roll
 
@@ -82,7 +82,10 @@ def lpv(v):
         return np.stack([np.ones_like(v), v], axis=1)
     elif BASIS_DIM == 3:
         # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
-        return np.stack([np.ones_like(v), v, 1.0/v_safe], axis=1)
+        return np.stack([np.ones_like(v), v, 1.0/v_safe], axis=1)    
+    elif BASIS_DIM == 4:
+        # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
+        return np.stack([np.ones_like(v), v, 1.0/v_safe, v**2], axis=1)
     else:
         raise ValueError(f"Unsupported BASIS_DIM: {BASIS_DIM}")
 
@@ -204,7 +207,7 @@ def build_regression(files):
             phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
             col += BASIS_DIM
             # Cubic effect (captures tire saturation/diminishing returns)
-            phi[:, col:col+BASIS_DIM] = v_lpv * (steer_lag**2)[:, None]
+            phi[:, col:col+BASIS_DIM] = v_lpv * (steer_lag**3)[:, None]
             col += BASIS_DIM            
 
         # 4. EXOGENOUS: aEgo (Speed dependent)
@@ -386,7 +389,9 @@ if __name__ == "__main__":
     print(f"Total parameters: {len(theta)}")
 
     # Update basis names to match [1, v, 1/v]
-    if BASIS_DIM == 3:
+    if BASIS_DIM == 4:
+        basis_names = ["1", "v", "1/v", 'v**2']
+    elif BASIS_DIM == 3:
         basis_names = ["1", "v", "1/v"]
     elif BASIS_DIM == 2:
         basis_names = ["1", "v"]
