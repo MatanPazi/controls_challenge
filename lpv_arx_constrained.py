@@ -44,7 +44,7 @@ LAMBDA_RIDGE = 1e-2         # Small penalty to prevent overfitting (higher = sim
 
 NA = 6                      # Use 1 past ay values
 NUM_STEER_TERMS = 8         # Only current steer (Assumes lag = 0)
-BASIS_DIM = 1               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
+BASIS_DIM = 4               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
 EXO_VARS = ['vEgo', 'roll', 'aEgo']             # Change as needed, examples:
@@ -76,12 +76,17 @@ def lpv(v):
     Logic: Each regressor (past ay, steer, exogenous) is multiplied by this basis
     to create speed-varying coefficients. Quadratic term captures v² physics in turning.
     """
+    v_safe = np.clip(v, MIN_SPEED, None)
     if BASIS_DIM == 1:
         return np.ones((len(v), 1))
     elif BASIS_DIM == 2:
         return np.stack([np.ones_like(v), v], axis=1)
     elif BASIS_DIM == 3:
-        return np.stack([np.ones_like(v), v, v**2], axis=1)
+        # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
+        return np.stack([np.ones_like(v), v, 1.0/v_safe], axis=1)    
+    elif BASIS_DIM == 4:
+        # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
+        return np.stack([np.ones_like(v), v, 1.0/v_safe, v**2], axis=1)
     else:
         raise ValueError(f"Unsupported BASIS_DIM: {BASIS_DIM}")
 
@@ -373,7 +378,9 @@ if __name__ == "__main__":
     elif BASIS_DIM == 2:
         basis_names = ["1", "v"]
     elif BASIS_DIM == 3:
-        basis_names = ["1", "v", "v^2"]
+        basis_names = ["1", "v", '1/v']
+    elif BASIS_DIM == 4:
+        basis_names = ["1", "v", '1/v', "v^2"]        
     else:
         raise ValueError("Unsupported BASIS_DIM")
     col = 0
