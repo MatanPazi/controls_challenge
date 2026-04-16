@@ -193,16 +193,16 @@ class Controller(BaseController):
 
         steer = steer_mpc + self.fb_integral
 
-        # Logging (now shows corrected command)
-        with open("mpc_log.txt", "a") as f:
-            f.write(f"{self.step_idx},{current_lataccel},{target_lataccel},{steer},{ay_pred}\n")        
-
         # 6. Update history and return
         self.steer_hist.append(steer)
         self.steer_hist = self.steer_hist[-self.model["NB"]:]
-        # Filter steer cmd
         # alpha = 0.5
         # self.steer_filt = (1 - alpha) * self.steer_filt + alpha * steer                    
+
+        # Logging (now shows corrected command)
+        with open("mpc_log.txt", "a") as f:
+            f.write(f"{self.step_idx},{current_lataccel},{target_lataccel},{self.steer_filt},{ay_pred}\n")                    
+        
         self.step_idx += 1
 
         return steer
