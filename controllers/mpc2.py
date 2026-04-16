@@ -73,15 +73,12 @@ class Controller(BaseController):
             pred += np.dot(basis, theta[col:col+BD]) * ay_h[-i]
             col += BD
 
-        # ---- 3. Steering terms (Linear + Cubic) ----
+        # ---- 3. Steering terms (Linear) ----
         for d in range(NB):
             u = steer_val if d == 0 else steer_h[-d]
             # Linear Term
             pred += np.dot(basis, theta[col:col+BD]) * u
-            col += BD
-            # Cubic Term (Nonlinear Saturation)
-            pred += np.dot(basis, theta[col:col+BD]) * (u**3)
-            col += BD
+            col += BD           
 
         # ---- 4. Exogenous: aEgo (Speed Dependent) ----
         a_ego = zeta.get("aEgo", 0.0)
