@@ -6,7 +6,6 @@ Consider adding to build_regression:
     curvature and curvature rate?
     steering rate
     steer rate * velocity interaction
-    
 LPV-ARX Model Identification for TinyPhysics Lateral Dynamics
 
 This script fits a Linear Parameter-Varying AutoRegressive with eXogenous inputs (LPV-ARX) model 
@@ -52,7 +51,7 @@ LAMBDA_RIDGE = 1e-2         # Small penalty to prevent overfitting (higher = sim
 
 NA = 6                      # Use 1 past ay values
 NUM_STEER_TERMS = 8         # Only current steer (Assumes lag = 0)
-BASIS_DIM = 4               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
+BASIS_DIM = 3               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
 EXO_VARS = ['vEgo', 'roll', 'aEgo']             # Change as needed, examples:
@@ -91,10 +90,10 @@ def lpv(v):
         return np.stack([np.ones_like(v), v], axis=1)
     elif BASIS_DIM == 3:
         # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
-        return np.stack([np.ones_like(v), v, 1.0/v_safe], axis=1)    
+        return np.stack([np.ones_like(v), v, v**2], axis=1)    
     elif BASIS_DIM == 4:
         # Physics-informed basis: [Constant, Linear Speed, Inverse Speed]
-        return np.stack([np.ones_like(v), v, 1.0/v_safe, v**2], axis=1)
+        return np.stack([np.ones_like(v), v, v**2, 1.0/v_safe], axis=1)
     else:
         raise ValueError(f"Unsupported BASIS_DIM: {BASIS_DIM}")
 
@@ -203,13 +202,13 @@ def build_regression(files):
         for i_lag in range(1, NA + 1):
             ay_lag = ay[k0 - i_lag : N - i_lag]
             phi[:, col:col+BASIS_DIM] = v_lpv * ay_lag[:, None]
-            col += BASIS_DIM
+            col += BASIS_DIM        
 
         # ---- Steering terms (current + past) ----
         for d_lag in range(NUM_STEER_TERMS):
             steer_lag = steer[k0 - d_lag : N - d_lag]
             phi[:, col:col+BASIS_DIM] = v_lpv * steer_lag[:, None]
-            col += BASIS_DIM
+            col += BASIS_DIM   
 
         # ---- Dynamic exogenous inputs ----
         for exo_col in EXO_VARS:
