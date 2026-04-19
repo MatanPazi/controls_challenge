@@ -16,9 +16,9 @@ def build_basis(v, BASIS_DIM):
     elif BASIS_DIM == 2:
         return np.array([1.0, v])
     elif BASIS_DIM == 3:
-        return np.array([1.0, v, 1.0/v_safe])
+        return np.array([1.0, v, v**2])
     elif BASIS_DIM == 4:
-        return np.array([1.0, v, 1.0/v_safe, v**2])    
+        return np.array([1.0, v, v**2, 1.0/v_safe])    
     else:
         raise ValueError("Unsupported BASIS_DIM")
 
@@ -192,7 +192,7 @@ class Controller(BaseController):
 
         error = target_lataccel - current_lataccel            
 
-        Ki = 0.0   # start small (0.1–0.5)
+        Ki = 0.02   # start small (0.1–0.5)
 
         self.fb_integral += Ki * error
 
