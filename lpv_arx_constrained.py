@@ -49,9 +49,9 @@ DATA_DIR = Path("data_excitation")
 MAX_ROUTES = 500
 LAMBDA_RIDGE = 1e-2         # Small penalty to prevent overfitting (higher = simpler model).
 
-NA = 6                      # Use 1 past ay values
+NA = 7                      # Use 1 past ay values
 NUM_STEER_TERMS = 8         # Only current steer (Assumes lag = 0)
-BASIS_DIM = 3               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
+BASIS_DIM = 2               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
 EXO_VARS = ['vEgo', 'roll', 'aEgo']             # Change as needed, examples:
