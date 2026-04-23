@@ -54,7 +54,7 @@ NUM_STEER_TERMS = 8         # Only current steer (Assumes lag = 0)
 BASIS_DIM = 2               # Number of basis functions per regressor (const + v + v²). BASIS_DIM = 1 disregards v and v².
 
 # === NEW: Dynamic exogenous variables ===
-EXO_VARS = ['vEgo', 'roll', 'aEgo']             # Change as needed, examples:
+EXO_VARS = ['roll']             # Change as needed, examples:
                                         # ["vEgo"] 
                                         # ["vEgo", "roll"]
                                         # ["vEgo", "aEgo"]
