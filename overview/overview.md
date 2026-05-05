@@ -244,7 +244,21 @@ Test other controllers later on:
 
 
 
-* TODO, Add images of plots where relevant.
+* TODO:
+  * Increase # of generated routes.
+  * In free response, assume steer command is equal to previous.
+  Instead of  
+  pred_f = self.predict_step(curr_ay_h, 0.0, curr_u_h, zetas[k])  
+  Write:  
+  pred_f = self.predict_step(curr_ay_h, curr_u_h[-1], curr_u_h, zetas[k])
+  * Try to change the impulse commands to sustained commands (Step).  
+  Change this:  
+  u_in = 1.0 if k == j else 0.0  
+  To:  
+  u_in = 1.0 if k >= j else 0.0
+  * Consider removing terminal weight. I'm penalizing output error rather than steering.  
+  Remove:  
+  q[-1] += -2 * weight_terminal * y_ref[N-1]
 
 
 
