@@ -2,7 +2,7 @@ from . import BaseController
 import numpy as np
 import osqp
 from scipy import sparse
-from lpv_arx_constrained2 import MIN_SPEED
+from lpv_arx_constrained import MIN_SPEED
 
 
 # ============================
