@@ -17,7 +17,7 @@ class RegressionExplanation(Scene):
         title = Text(
             "Building the Regression Problem",
             font_size=42
-        ).to_edge(UP)
+        ).to_edge(UP*1.5)
 
         self.play(Write(title))
         self.wait(0.7)
@@ -29,27 +29,24 @@ class RegressionExplanation(Scene):
         sample_title = Text(
             "Each row in X represents one timestep",
             font_size=30
-        ).next_to(title, DOWN, buff=0.6)
+        ).next_to(title, DOWN, buff=0.3)
 
         self.play(FadeIn(sample_title, shift=UP))
 
         # Example row contents
         row = MathTex(
+            r"x[k] = ",
             r"[",
-            r"a_y[k-1]",
+            r"a_y[k-1],\, \dots,\, a_y[k-n_{ay}]",
             r",",
-            r"a_y[k-2]",
-            r",",
-            r"\delta[k]",
-            r",",
-            r"\delta[k-1]",
+            r"\delta[k],\, \dots,\, \delta[k-n_{\delta}]",
             r",",
             r"\mathrm{roll}[k]",
             r"]",
             font_size=40
         )
 
-        row.set_color_by_tex(r"a_y", BLUE)
+        row.set_color_by_tex("a_y", BLUE)
         row.set_color_by_tex(r"\delta", GREEN)
         row.set_color_by_tex(r"\mathrm{roll}", ORANGE)
 
@@ -81,19 +78,15 @@ class RegressionExplanation(Scene):
         self.wait(0.8)
 
         expanded = MathTex(
-            r"a_y[k-1]\cdot[1,v,v^2]",
-            r"\quad",
-            r"\delta[k]\cdot[1,v,v^2]",
-            font_size=40
+            r"\;\rightarrow\;",
+            r"x[k]\cdot \phi(v[k])",
+            font_size=42
         )
 
-        expanded.set_color_by_tex(r"a_y", BLUE)
-        expanded.set_color_by_tex(r"\delta", GREEN)
+        expanded.next_to(basis, DOWN, buff=0.4)
 
-        expanded.next_to(basis, DOWN, buff=0.8)
-
-        self.play(TransformFromCopy(row[1], expanded[0]))
-        self.play(TransformFromCopy(row[5], expanded[2]))
+        self.play(Write(expanded[0]))
+        self.play(Write(expanded[1]))
 
         self.wait(1.5)
 
@@ -111,17 +104,17 @@ class RegressionExplanation(Scene):
         matrix_title = Text(
             "All samples are stacked into a large feature matrix",
             font_size=30
-        ).next_to(title, DOWN, buff=0.8)
+        ).next_to(title, DOWN, buff=0.3)
 
         self.play(Transform(sample_title, matrix_title))
 
         X_matrix = MathTex(
             r"X =",
             r"\begin{bmatrix}"
-            r"x_{11} & x_{12} & x_{13} & \cdots \\"
-            r"x_{21} & x_{22} & x_{23} & \cdots \\"
-            r"x_{31} & x_{32} & x_{33} & \cdots \\"
-            r"\vdots & \vdots & \vdots & \ddots"
+            r"x[k_1] \cdot \phi(v[k_1]) \\"
+            r"x[k_2] \cdot \phi(v[k_2]) \\"
+            r"\vdots \\"
+            r"x[k_N] \cdot \phi(v[k_N])"
             r"\end{bmatrix}",
             font_size=42
         )
