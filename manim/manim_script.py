@@ -143,7 +143,7 @@ class RegressionExplanation(Scene):
 
         theta_text = Text(
             "Unknown coefficients",
-            font_size=24
+            font_size=20, slant=ITALIC
         ).next_to(theta, DOWN)
 
         self.play(Write(theta))
@@ -162,14 +162,14 @@ class RegressionExplanation(Scene):
             font_size=52
         )
 
-        equation.move_to(DOWN * 2)
+        equation.move_to(DOWN * 2.7)
 
         equation[0].set_color(BLUE)
         equation[2].set_color(YELLOW)
 
         y_text = Text(
             "Measured next lateral acceleration",
-            font_size=24
+            font_size=20, slant=ITALIC
         ).next_to(equation[2], DOWN)
 
         self.play(Write(equation))
