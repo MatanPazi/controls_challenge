@@ -1,3 +1,4 @@
+<h2>Check out the overview folder for more info.</h2>
 <div align="center">
 <h1>comma Controls Challenge v2</h1>
 
