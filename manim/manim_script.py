@@ -210,23 +210,6 @@ class RegressionExplanation(Scene):
 
         self.play(FadeIn(subtitle))
 
-        self.wait(2)
-
-        # ----------------------------------------------------
-        # Final result
-        # ----------------------------------------------------
-
-        final_text = Text(
-            "Solve for θ using least squares",
-            font_size=38
-        )
-
-        final_text.set_color(GREEN)
-
-        final_text.move_to(DOWN * 2.7)
-
-        self.play(Write(final_text))
-
         self.wait(3)
 
 
@@ -235,7 +218,7 @@ if __name__ == "__main__":
     from manim import config
 
     # Optional: Set output quality here (low or high)
-    config.quality = "low_quality"    # Change to "high_quality" for higher resolution
+    config.quality = "high_quality"    # Change to "high_quality" for higher resolution
     config.media_dir = os.getcwd()    # Optional: Set output directory
 
     # Render the scene
