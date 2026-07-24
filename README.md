@@ -1,3 +1,9 @@
+Here's a video I made about this script:  
+
+**Comma.ai Controls Challenge - Solved w/ MPC Controller**  
+[![Video Title](https://img.youtube.com/vi/9P4ISk5--C0/0.jpg)](https://www.youtube.com/watch?v=9P4ISk5--C0)
+
+
 <h2>Check out the overview folder for more info.</h2>
 <div align="center">
 <h1>comma Controls Challenge v2</h1>
